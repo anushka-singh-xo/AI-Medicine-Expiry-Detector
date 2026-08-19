@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedGuard — Expiry Detection Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<style>
+  :root{
+    --paper:#EFF3F1;
+    --paper-raised:#FFFFFF;
+    --ink:#152420;
+    --ink-soft:#4B5B56;
+    --teal:#0B6E6E;
+    --teal-deep:#0A4F4F;
+    --red:#B23A32;
+    --amber:#B4791F;
+    --green:#3D7A54;
+    --line:#D7DED9;
+    --line-soft:#E4E9E5;
+    --shadow: 0 1px 2px rgba(21,36,32,0.06), 0 6px 20px rgba(21,36,32,0.05);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
+  body{
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 64px 0;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 0;}
+
+  /* ---------- Header ---------- */
+  header.top{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    gap:16px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+    padding-bottom:20px;margin-bottom:22px;
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:40px;height:40px;border-radius:9px;
+    background:linear-gradient(155deg,var(--teal),var(--teal-deep));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:var(--shadow);
+    flex-shrink:0;
+  }
+  .brand-mark svg{width:22px;height:22px;}
+  .brand h1{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;
+    font-size:22px;margin:0;letter-spacing:-0.01em;line-height:1;
+  }
+  .brand p{margin:4px 0 0;font-size:12.5px;color:var(--ink-soft);letter-spacing:.02em;}
+  .top-actions{display:flex;gap:10px;align-items:center;}
+  .thresh{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);
+    background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;
+    padding:7px 10px;
+  }
+  .thresh input{width:52px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;border:none;background:transparent;color:var(--ink);text-align:right;}
+  .thresh input:focus{outline:none;}
+
+  /* ---------- Stat strip (stamps) ---------- */
+  .stat-strip{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;
+  }
+  .stat{
+    background:var(--paper-raised);border:1px solid var(--line);border-radius:12px;
+    padding:16px 16px 14px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  }
+  .stat .n{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;line-height:1;}
+  .stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-top:6px;font-weight:600;}
+  .stat::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;}
+  .stat.expired::after{background:var(--red);} .stat.expired .n{color:var(--red);}
+  .stat.near::after{background:var(--amber);} .stat.near .n{color:var(--amber);}
+  .stat.valid::after{background:var(--green);} .stat.valid .n{color:var(--green);}
+  .stat.total::after{background:var(--teal);} .stat.total .n{color:var(--teal-deep);}
+
+  /* ---------- Panels ---------- */
+  .panel{
+    background:var(--paper-raised);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow); margin-bottom:22px;
+  }
+  .panel-head{
+    padding:16px 20px;border-bottom:1px solid var(--line-soft);
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .panel-head h2{font-family:'Space Grotesk',sans-serif;font-size:15.5px;margin:0;font-weight:600;letter-spacing:-.005em;}
+  .panel-head .sub{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .panel-body{padding:20px;}
+
+  .mode-toggle{display:flex;gap:6px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:3px;}
+  .mode-toggle button{
+    border:none;background:transparent;padding:6px 12px;font-size:12.5px;font-weight:600;
+    border-radius:6px;cursor:pointer;color:var(--ink-soft);font-family:'IBM Plex Sans',sans-serif;
+  }
+  .mode-toggle button.active{background:var(--teal-deep);color:#fff;}
+
+  /* ---------- Scan zone ---------- */
+  .scan-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media (max-width:760px){ .scan-grid{grid-template-columns:1fr;} .stat-strip{grid-template-columns:1fr 1fr;} }
+
+  .dropzone{
+    border:1.5px dashed var(--line);border-radius:12px;background:var(--paper);
+    min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;cursor:pointer;padding:16px;text-align:center;transition:border-color .15s, background .15s;
+    position:relative;overflow:hidden;
+  }
+  .dropzone:hover{border-color:var(--teal);background:#EAF3F1;}
+  .dropzone.hasimg{padding:0;border-style:solid;}
+  .dropzone img{width:100%;height:220px;object-fit:contain;background:#0f1a17;}
+  .dropzone .hint{font-size:12px;color:var(--ink-soft);}
+  .dropzone .icon{color:var(--teal-deep);}
+  .dz-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:6px;}
+  .dz-actions button{
+    background:rgba(21,36,32,.72);color:#fff;border:none;border-radius:6px;
+    padding:5px 9px;font-size:11px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;
+  }
+  input[type=file]{display:none;}
+
+  .ocr-status{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);
+    margin-top:10px;font-family:'IBM Plex Mono',monospace;
+  }
+  .spinner{
+    width:12px;height:12px;border-radius:50%;border:2px solid var(--line);
+    border-top-color:var(--teal);animation:spin .7s linear infinite;flex-shrink:0;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
+  .field input, .field select{
+    width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;background:var(--paper);color:var(--ink);
+  }
+  .field input:focus,.field select:focus{outline:2px solid var(--teal);outline-offset:-1px;border-color:var(--teal);}
+  .field.name input{font-family:'IBM Plex Sans',sans-serif;font-weight:500;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  .detect-note{
+    font-size:11.5px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-soft);
+    border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.5;
+  }
+  .detect-note b{color:var(--ink);}
+  .raw-text{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);
+    background:var(--paper);border:1px solid var(--line-soft);border-radius:8px;padding:8px 10px;
+    max-height:70px;overflow:auto;white-space:pre-wrap;margin-bottom:12px;
+  }
+
+  .btn{
+    font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:13px;border:none;
+    border-radius:8px;padding:10px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  }
+  .btn-primary{background:var(--teal-deep);color:#fff;}
+  .btn-primary:hover{background:var(--teal);}
+  .btn-primary:disabled{background:#B7C4C0;cursor:not-allowed;}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--ink-soft);color:var(--ink);}
+  .btn-full{width:100%;justify-content:center;}
+
+  /* ---------- Alerts ---------- */
+  .alert-list{display:flex;flex-direction:column;gap:8px;}
+  .alert-row{
+    display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;
+    border:1px solid var(--line-soft);background:var(--paper);
+  }
+  .alert-row .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .alert-row.expired .dot{background:var(--red);}
+  .alert-row.near .dot{background:var(--amber);}
+  .alert-row .txt{flex:1;font-size:13px;}
+  .alert-row .txt b{font-weight:600;}
+  .alert-row .days{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);}
+  .empty-note{font-size:13px;color:var(--ink-soft);padding:8px 2px;}
+
+  /* ---------- Ledger ---------- */
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .tab{
+    border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);
+    font-size:12px;font-weight:600;padding:6px 12px;border-radius:20px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;
+  }
+  .tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .search{
+    border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:12.5px;
+    font-family:'IBM Plex Sans',sans-serif;width:170px;background:var(--paper);color:var(--ink);
+  }
+  .search:focus{outline:none;border-color:var(--teal);}
+
+  .ledger{display:flex;flex-direction:column;}
+  .lrow{
+    display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr auto auto;gap:10px;
+    align-items:center;padding:13px 20px;border-top:1px solid var(--line-soft);
+  }
+  .lrow.headrow{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);
+    font-weight:600;border-top:none;padding-bottom:8px;
+  }
+  .lname{font-weight:600;font-size:13.5px;}
+  .lname .batch{display:block;font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink-soft);}
+  .days-left{font-family:'IBM Plex Mono',monospace;font-size:12px;}
+  .icon-btn{background:none;border:none;cursor:pointer;color:var(--ink-soft);padding:4px;}
+  .icon-btn:hover{color:var(--red);}
+
+  /* ---------- Stamp ---------- */
+  .stamp{
+    display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:10.5px;letter-spacing:.05em;
+    text-transform:uppercase;padding:5px 10px;border-radius:5px;transform:rotate(-2deg);
+    line-height:1.15;position:relative;white-space:nowrap;
+  }
+  .stamp::before{
+    content:'';position:absolute;inset:0;border-radius:5px;border:1.5px solid currentColor;
+    opacity:.55;pointer-events:none;
+  }
+  .stamp.expired{color:var(--red);background:rgba(178,58,50,.08);}
+  .stamp.near{color:var(--amber);background:rgba(180,121,31,.10);}
+  .stamp.valid{color:var(--green);background:rgba(61,122,84,.08);}
+
+  .empty-state{
+    text-align:center;padding:46px 20px;color:var(--ink-soft);
+  }
+  .empty-state svg{opacity:.35;margin-bottom:10px;}
+  .empty-state p{font-size:13px;margin:0;}
+
+  footer{text-align:center;font-size:11.5px;color:var(--ink-soft);margin-top:8px;}
+
+  @media (max-width:700px){
+    .lrow{grid-template-columns:1fr;gap:4px;padding:14px 16px;}
+    .lrow.headrow{display:none;}
+    .lrow > div, .lrow > span{display:flex;justify-content:space-between;font-size:12.5px;}
+    .lname{margin-bottom:4px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L4 5v6c0 5.2 3.4 9.9 8 11 4.6-1.1 8-5.8 8-11V5l-8-3z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 8v6M9 11h6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <h1>MedGuard</h1>
+        <p>Expiry detection ledger &mdash; scan, parse, and flag before it's too late</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="thresh">
+        <span>Alert window</span>
+        <input type="number" id="thresholdInput" min="1" max="365" value="90">
+        <span>days</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="stat-strip">
+    <div class="stat expired"><div class="n" id="statExpired">0</div><div class="l">Expired</div></div>
+    <div class="stat near"><div class="n" id="statNear">0</div><div class="l">Near expiry</div></div>
+    <div class="stat valid"><div class="n" id="statValid">0</div><div class="l">Valid</div></div>
+    <div class="stat total"><div class="n" id="statTotal">0</div><div class="l">Total tracked</div></div>
+  </section>
+
+  <!-- SCAN PANEL -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Scan a package</h2>
+        <div class="sub">Photograph the expiry print, or enter details by hand</div>
+      </div>
+      <div class="mode-toggle">
+        <button id="modeScanBtn" class="active">Scan photo</button>
+        <button id="modeManualBtn">Enter manually</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="scan-grid" id="scanGrid">
+        <div>
+          <div class="dropzone" id="dropzone">
+            <svg class="icon" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.5"/></svg>
+            <div><b style="font-size:13px;">Tap to capture or upload</b></div>
+            <div class="hint">Front-facing expiry stamp works best</div>
+            <input type="file" id="fileInput" accept="image/*" capture="environment">
+          </div>
+          <div class="ocr-status" id="ocrStatus" style="display:none;">
+            <div class="spinner"></div><span id="ocrStatusText">Reading package…</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="detect-note" id="detectNote" style="display:none;"></div>
+          <div class="raw-text" id="rawText" style="display:none;"></div>
+
+          <div class="field name">
+            <label>Medicine name</label>
+            <input type="text" id="fName" placeholder="e.g. Amoxicillin 500mg">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label>Batch / lot no.</label>
+              <input type="text" id="fBatch" placeholder="e.g. B4521K" class="mono">
+            </div>
+            <div class="field">
+              <label>Mfg. date</label>
+              <input type="date" id="fMfg">
+            </div>
+          </div>
+          <div class="field">
+            <label>Expiry date <span style="color:var(--red);">*</span></label>
+            <input type="date" id="fExp">
+          </div>
+          <button class="btn btn-primary btn-full" id="addBtn">Add to inventory</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ALERTS -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Active alerts</h2>
+        <div class="sub" id="alertSub">Nothing needs attention yet</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="alert-list" id="alertList"></div>
+    </div>
+  </section>
+
+  <!-- LEDGER -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Inventory ledger</h2>
+        <div class="sub" id="ledgerSub">0 items</div>
+      </div>
+      <div class="filters">
+        <button class="tab active" data-filter="all">All</button>
+        <button class="tab" data-filter="expired">Expired</button>
+        <button class="tab" data-filter="near">Near</button>
+        <button class="tab" data-filter="valid">Valid</button>
+        <input type="text" class="search" id="searchBox" placeholder="Search name or batch…">
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0 0 6px;">
+      <div class="lrow headrow">
+        <div>Medicine</div><div>Mfg.</div><div>Expiry</div><div>Days left</div><div>Status</div><div></div>
+      </div>
+      <div class="ledger" id="ledgerBody"></div>
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.4"/></svg>
+        <p>No medicines match this view yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Dates parsed on-device via optical character recognition — always confirm against the physical package before dispensing or discarding.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================= Storage helpers ================= */
+  const STORE_KEY = "medguard:inventory";
+  const SETTINGS_KEY = "medguard:settings";
+
+  async function loadInventory(){
+    try{
+      const r = await window.storage.get(STORE_KEY, false);
+      return r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ return []; }
+  }
+  async function saveInventory(list){
+    try{ await window.storage.set(STORE_KEY, JSON.stringify(list), false); }
+    catch(e){ console.error("save failed", e); }
+  }
+  async function loadSettings(){
+    try{
+      const r = await window.storage.get(SETTINGS_KEY, false);
+      return r && r.value ? JSON.parse(r.value) : {thresholdDays:90};
+    }catch(e){ return {thresholdDays:90}; }
+  }
+  async function saveSettings(s){
+    try{ await window.storage.set(SETTINGS_KEY, JSON.stringify(s), false); }
+    catch(e){ console.error("save settings failed", e); }
+  }
+
+  /* ================= State ================= */
+  let inventory = [];
+  let thresholdDays = 90;
+  let currentFilter = "all";
+  let searchTerm = "";
+  let pendingImageDataUrl = null;
+
+  /* ================= Date parsing engine ================= */
+  const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11};
+  const EXP_KEYWORDS = /(EXP|EXPIRY|EXPIRE[SD]?|USE\s*BY|BEST\s*BEFORE|BB|B\.?E)/i;
+  const MFG_KEYWORDS = /(MFG|MFD|MANUFACTURE[D]?|PKD|PACKED|MADE\s*ON)/i;
+  const BATCH_REGEX = /(?:B\.?\s?NO\.?|BATCH\s*NO\.?|BATCH|LOT\s*NO\.?|LOT)[:\-\.\s]*([A-Z0-9\-]{3,14})/i;
+
+  function lastDayOfMonth(year, monthIdx){
+    return new Date(year, monthIdx + 1, 0);
+  }
+  function fullYear(y){
+    y = parseInt(y,10);
+    if (y < 100) return y < 50 ? 2000+y : 1900+y;
+    return y;
+  }
+  function toISO(d){
+    if(!d || isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0,10);
+  }
+
+  // Returns array of {index, date, isMonthYearOnly, context}
+  function findDateCandidates(text){
+    const candidates = [];
+    const upper = text.toUpperCase();
+
+    // Pattern A: Month-name + year, e.g. "EXP JAN 2027", "EXP. FEB-2026", "DEC2025"
+    const reMonthYear = /(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[A-Z]*\.?\s*[-\/\s]?\s*(\d{2,4})/gi;
+    let m;
+    while((m = reMonthYear.exec(text)) !== null){
+      const mon = MONTHS[m[1].toLowerCase()];
+      const yr = fullYear(m[2]);
+      if(mon === undefined) continue;
+      candidates.push({
+        index: m.index, raw: m[0],
+        date: lastDayOfMonth(yr, mon),
+        isMonthYearOnly: true
+      });
+    }
+
+    // Pattern B: numeric MM/YYYY or MM-YYYY (not part of a longer DD/MM/YYYY match)
+    const reMonYearNum = /\b(\d{1,2})[\/\-\.](\d{4})\b/g;
+    while((m = reMonYearNum.exec(text)) !== null){
+      const mon = parseInt(m[1],10) - 1;
+      const yr = parseInt(m[2],10);
+      if(mon < 0 || mon > 11) continue;
+      candidates.push({
+        index: m.index, raw: m[0],
+        date: lastDayOfMonth(yr, mon),
+        isMonthYearOnly: true
+      });
+    }
+
+    // Pattern C: full DD/MM/YYYY or DD-MM-YYYY
+    const reFull = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/g;
+    while((m = reFull.exec(text)) !== null){
+      let a = parseInt(m[1],10), b = parseInt(m[2],10);
+      const yr = fullYear(m[3]);
+      let day, month;
+      if(a > 12 && b <= 12){ day = a; month = b - 1; }
+      else if(b > 12 && a <= 12){ day = b; month = a - 1; }
+      else { day = a; month = b - 1; } // default assume DD/MM/YYYY (common on pharma packaging)
+      if(month < 0 || month > 11 || day < 1 || day > 31) continue;
+      const d = new Date(yr, month, day);
+      candidates.push({ index: m.index, raw: m[0], date: d, isMonthYearOnly:false });
+    }
+
+    // Pattern D: ISO YYYY-MM-DD
+    const reISO = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g;
+    while((m = reISO.exec(text)) !== null){
+      const yr = parseInt(m[1],10), month = parseInt(m[2],10)-1, day = parseInt(m[3],10);
+      if(month<0||month>11||day<1||day>31) continue;
+      candidates.push({ index:m.index, raw:m[0], date:new Date(yr,month,day), isMonthYearOnly:false });
+    }
+
+    // attach context (40 chars before the match) for keyword scoring
+    candidates.forEach(c => {
+      c.context = text.slice(Math.max(0, c.index-25), c.index).toUpperCase();
+    });
+    candidates.sort((x,y)=>x.index-y.index);
+    return candidates;
+  }
+
+  function extractFromText(text){
+    const candidates = findDateCandidates(text);
+    let expiry = null, mfg = null;
+
+    const expLabeled = candidates.filter(c => EXP_KEYWORDS.test(c.context));
+    const mfgLabeled = candidates.filter(c => MFG_KEYWORDS.test(c.context));
+
+    if(expLabeled.length){
+      expiry = expLabeled.reduce((latest,c)=> !latest || c.date > latest.date ? c : latest, null);
+    }
+    if(mfgLabeled.length){
+      mfg = mfgLabeled.reduce((earliest,c)=> !earliest || c.date < earliest.date ? c : earliest, null);
+    }
+
+    if(!expiry){
+      const remaining = candidates.filter(c => c !== mfg);
+      if(remaining.length === 1){
+        expiry = remaining[0];
+      } else if(remaining.length >= 2){
+        // assume latest date is expiry, earliest is mfg (if mfg not already found)
+        const sorted = [...remaining].sort((a,b)=>a.date-b.date);
+        expiry = sorted[sorted.length-1];
+        if(!mfg) mfg = sorted[0];
+      }
+    }
+
+    const batchMatch = text.match(BATCH_REGEX);
+    const batch = batchMatch ? batchMatch[1].toUpperCase() : null;
+
+    return {
+      expiryISO: expiry ? toISO(expiry.date) : null,
+      mfgISO: mfg ? toISO(mfg.date) : null,
+      batch,
+      candidateCount: candidates.length
+    };
+  }
+
+  /* ================= Status / classification ================= */
+  function daysUntil(iso){
+    if(!iso) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const exp = new Date(iso + "T00:00:00");
+    return Math.round((exp - today) / 86400000);
+  }
+  function statusFor(iso){
+    const d = daysUntil(iso);
+    if(d === null) return "unknown";
+    if(d < 0) return "expired";
+    if(d <= thresholdDays) return "near";
+    return "valid";
+  }
+  function statusLabel(s, days){
+    if(s === "expired") return "Expired";
+    if(s === "near") return "Expires soon";
+    if(s === "valid") return "Valid";
+    return "Unknown";
+  }
+
+  /* ================= OCR ================= */
+  async function runOCR(dataUrl){
+    const statusEl = document.getElementById("ocrStatus");
+    const statusText = document.getElementById("ocrStatusText");
+    statusEl.style.display = "flex";
+    statusText.textContent = "Reading package…";
+    try{
+      if(typeof Tesseract === "undefined"){
+        throw new Error("OCR engine unavailable");
+      }
+      const result = await Tesseract.recognize(dataUrl, "eng", {
+        logger: (info) => {
+          if(info.status === "recognizing text"){
+            statusText.textContent = "Reading package… " + Math.round(info.progress*100) + "%";
+          } else if (info.status) {
+            statusText.textContent = info.status.charAt(0).toUpperCase() + info.status.slice(1) + "…";
+          }
+        }
+      });
+      const text = result.data.text || "";
+      applyExtraction(text);
+    }catch(err){
+      console.error(err);
+      document.getElementById("detectNote").style.display = "block";
+      document.getElementById("detectNote").innerHTML = "<b>Couldn't read the image automatically.</b> Enter the details below by hand — the fields still save and get tracked normally.";
+    }finally{
+      statusEl.style.display = "none";
+    }
+  }
+
+  function applyExtraction(text){
+    const rawEl = document.getElementById("rawText");
+    const noteEl = document.getElementById("detectNote");
+    if(text && text.trim()){
+      rawEl.style.display = "block";
+      rawEl.textContent = text.trim().slice(0, 600);
+    }
+    const info = extractFromText(text || "");
+    if(info.expiryISO) document.getElementById("fExp").value = info.expiryISO;
+    if(info.mfgISO) document.getElementById("fMfg").value = info.mfgISO;
+    if(info.batch) document.getElementById("fBatch").value = info.batch;
+
+    noteEl.style.display = "block";
+    if(info.expiryISO){
+      noteEl.innerHTML = "<b>Expiry detected:</b> " + info.expiryISO + (info.mfgISO ? " &nbsp;·&nbsp; <b>Mfg detected:</b> " + info.mfgISO : "") + ". Double-check against the package, then fill in the medicine name.";
+    } else {
+      noteEl.innerHTML = "<b>No clear expiry date found</b> in the scanned text. Zoom in on the printed date and rescan, or enter it manually below.";
+    }
+  }
+
+  /* ================= UI wiring: scan / manual toggle ================= */
+  const modeScanBtn = document.getElementById("modeScanBtn");
+  const modeManualBtn = document.getElementById("modeManualBtn");
+  const scanGrid = document.getElementById("scanGrid");
+  const dropzoneCol = () => scanGrid.children[0];
+
+  modeScanBtn.addEventListener("click", () => {
+    modeScanBtn.classList.add("active"); modeManualBtn.classList.remove("active");
+    dropzoneCol().style.display = "";
+  });
+  modeManualBtn.addEventListener("click", () => {
+    modeManualBtn.classList.add("active"); modeScanBtn.classList.remove("active");
+    dropzoneCol().style.display = "none";
+  });
+
+  /* ================= Dropzone / file input ================= */
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      pendingImageDataUrl = ev.target.result;
+      renderDropzoneImage();
+      runOCR(pendingImageDataUrl);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function renderDropzoneImage(){
+    dropzone.classList.add("hasimg");
+    dropzone.innerHTML =
+      '<img src="' + pendingImageDataUrl + '" alt="scanned package">' +
+      '<div class="dz-actions"><button type="button" id="rescanBtn">Replace</button></div>';
+    document.getElementById("rescanBtn").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      resetDropzone();
+    });
+  }
+  function resetDropzone(){
+    pendingImageDataUrl = null;
+    fileInput.value = "";
+    dropzone.classList.remove("hasimg");
+    dropzone.innerHTML =
+      '<svg class="icon" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.5"/></svg>' +
+      '<div><b style="font-size:13px;">Tap to capture or upload</b></div>' +
+      '<div class="hint">Front-facing expiry stamp works best</div>' +
+      '<input type="file" id="fileInput" accept="image/*" capture="environment">';
+    document.getElementById("fileInput").addEventListener("change", fileInput.onchange);
+    dropzone.addEventListener("click", () => document.getElementById("fileInput").click());
+  }
+
+  /* ================= Add to inventory ================= */
+  document.getElementById("addBtn").addEventListener("click", async () => {
+    const name = document.getElementById("fName").value.trim();
+    const batch = document.getElementById("fBatch").value.trim();
+    const mfg = document.getElementById("fMfg").value;
+    const exp = document.getElementById("fExp").value;
+
+    if(!name){ flashField("fName"); return; }
+    if(!exp){ flashField("fExp"); return; }
+
+    inventory.push({
+      id: "m_" + Date.now() + "_" + Math.random().toString(36).slice(2,7),
+      name, batch: batch || null, mfg: mfg || null, exp,
+      addedAt: new Date().toISOString()
+    });
+    await saveInventory(inventory);
+    clearForm();
+    renderAll();
+  });
+
+  function flashField(id){
+    const el = document.getElementById(id);
+    el.style.borderColor = "var(--red)";
+    el.focus();
+    setTimeout(()=>{ el.style.borderColor = ""; }, 1200);
+  }
+
+  function clearForm(){
+    document.getElementById("fName").value = "";
+    document.getElementById("fBatch").value = "";
+    document.getElementById("fMfg").value = "";
+    document.getElementById("fExp").value = "";
+    document.getElementById("detectNote").style.display = "none";
+    document.getElementById("rawText").style.display = "none";
+    resetDropzone();
+  }
+
+  /* ================= Filters / search ================= */
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      tab.classList.add("active");
+      currentFilter = tab.dataset.filter;
+      renderLedger();
+    });
+  });
+  document.getElementById("searchBox").addEventListener("input", (e) => {
+    searchTerm = e.target.value.toLowerCase();
+    renderLedger();
+  });
+
+  /* ================= Threshold ================= */
+  const thresholdInput = document.getElementById("thresholdInput");
+  thresholdInput.addEventListener("change", async () => {
+    let v = parseInt(thresholdInput.value, 10);
+    if(isNaN(v) || v < 1) v = 90;
+    thresholdDays = v;
+    thresholdInput.value = v;
+    await saveSettings({thresholdDays});
+    renderAll();
+  });
+
+  /* ================= Rendering ================= */
+  function renderStats(){
+    let expired=0, near=0, valid=0;
+    inventory.forEach(item => {
+      const s = statusFor(item.exp);
+      if(s==="expired") expired++; else if(s==="near") near++; else if(s==="valid") valid++;
+    });
+    document.getElementById("statExpired").textContent = expired;
+    document.getElementById("statNear").textContent = near;
+    document.getElementById("statValid").textContent = valid;
+    document.getElementById("statTotal").textContent = inventory.length;
+  }
+
+  function renderAlerts(){
+    const list = document.getElementById("alertList");
+    const sub = document.getElementById("alertSub");
+    const flagged = inventory
+      .map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}))
+      .filter(x => x.s === "expired" || x.s === "near")
+      .sort((a,b)=> a.d - b.d);
+
+    if(!flagged.length){
+      list.innerHTML = "";
+      sub.textContent = inventory.length ? "Nothing needs attention right now" : "Nothing needs attention yet";
+      const empty = document.createElement("div");
+      empty.className = "empty-note";
+      empty.textContent = inventory.length ? "All tracked medicines are within safe range." : "Scan or add a medicine to start tracking.";
+      list.appendChild(empty);
+      return;
+    }
+    sub.textContent = flagged.length + " item" + (flagged.length>1?"s":"") + " need" + (flagged.length>1?"":"s") + " attention";
+    list.innerHTML = "";
+    flagged.forEach(({item,s,d}) => {
+      const row = document.createElement("div");
+      row.className = "alert-row " + s;
+      const dayTxt = s === "expired" ? Math.abs(d) + "d overdue" : "in " + d + "d";
+      row.innerHTML =
+        '<div class="dot"></div>' +
+        '<div class="txt"><b>' + escapeHtml(item.name) + '</b>' + (item.batch ? ' &middot; <span class="mono" style="font-size:11.5px;">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
+        '<div class="days">' + dayTxt + '</div>';
+      list.appendChild(row);
+    });
+  }
+
+  function renderLedger(){
+    const body = document.getElementById("ledgerBody");
+    const empty = document.getElementById("emptyState");
+    const sub = document.getElementById("ledgerSub");
+
+    let items = inventory.map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}));
+    if(currentFilter !== "all") items = items.filter(x => x.s === currentFilter);
+    if(searchTerm){
+      items = items.filter(x =>
+        x.item.name.toLowerCase().includes(searchTerm) ||
+        (x.item.batch||"").toLowerCase().includes(searchTerm)
+      );
+    }
+    items.sort((a,b)=> a.d - b.d);
+
+    sub.textContent = inventory.length + " item" + (inventory.length===1?"":"s") + " tracked";
+
+    body.innerHTML = "";
+    if(!items.length){
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    items.forEach(({item,s,d}) => {
+      const row = document.createElement("div");
+      row.className = "lrow";
+      const dayTxt = s==="expired" ? ("−" + Math.abs(d) + "d") : (s==="near" ? (d + "d") : (d + "d"));
+      const dayColor = s==="expired" ? "var(--red)" : s==="near" ? "var(--amber)" : "var(--ink-soft)";
+      row.innerHTML =
+        '<div class="lname">' + escapeHtml(item.name) + (item.batch ? '<span class="batch">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
+        '<div class="mono">' + (item.mfg || "—") + '</div>' +
+        '<div class="mono">' + item.exp + '</div>' +
+        '<div class="days-left" style="color:'+dayColor+';">' + dayTxt + '</div>' +
+        '<div><span class="stamp ' + s + '">' + statusLabel(s,d) + '</span></div>' +
+        '<div><button class="icon-btn" data-id="' + item.id + '" title="Remove">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
+        '</button></div>';
+      body.appendChild(row);
+    });
+
+    body.querySelectorAll(".icon-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        inventory = inventory.filter(i => i.id !== id);
+        await saveInventory(inventory);
+        renderAll();
+      });
+    });
+  }
+
+  function escapeHtml(str){
+    return (str||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function renderAll(){
+    renderStats();
+    renderAlerts();
+    renderLedger();
+  }
+
+  /* ================= Init ================= */
+  (async function init(){
+    const settings = await loadSettings();
+    thresholdDays = settings.thresholdDays || 90;
+    thresholdInput.value = thresholdDays;
+    inventory = await loadInventory();
+    renderAll();
+  })();
+
+})();
+</script>
+</body>
+</html>
