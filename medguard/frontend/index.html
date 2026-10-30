@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="medguard-api-base" content="">
 <title>MedGuard â€” Expiry Detection Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+
 <style>
   :root{
     --paper:#EFF3F1;
@@ -219,6 +220,15 @@
   .stamp.near{color:var(--amber);background:rgba(180,121,31,.10);}
   .stamp.valid{color:var(--green);background:rgba(61,122,84,.08);}
 
+  .temp-controls{display:none;}
+  .temp-controls.visible{display:grid;}
+  .temp-reading{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:9px;background:var(--paper);font-size:12.5px;}
+  .temp-reading.outside{border-color:rgba(178,58,50,.45);background:rgba(178,58,50,.06);}
+  .temp-readings{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+  .temp-badge{font-size:11px;color:var(--teal-deep);background:#eaf3f1;border-radius:5px;padding:3px 6px;margin-left:6px;}
+  .connection-status{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin:-8px 0 20px;border:1px solid var(--line);border-radius:9px;background:#eaf3f1;color:var(--teal-deep);font-size:13px;}
+  .connection-status.error{border-color:rgba(178,58,50,.35);background:rgba(178,58,50,.06);color:var(--red);}
+  .connection-status[hidden]{display:none;}
   .empty-state{
     text-align:center;padding:46px 20px;color:var(--ink-soft);
   }
@@ -233,10 +243,357 @@
     .lrow > div, .lrow > span{display:flex;justify-content:space-between;font-size:12.5px;}
     .lname{margin-bottom:4px;}
   }
+
+  /* ---------- MedGuard visual refinement ---------- */
+  :root{
+    --paper:#f3f7f4;
+    --paper-raised:#fff;
+    --ink:#142b2a;
+    --ink-soft:#5b706d;
+    --teal:#087f78;
+    --teal-deep:#075b58;
+    --red:#b83d46;
+    --amber:#a96b0c;
+    --green:#287653;
+    --line:#d8e4df;
+    --line-soft:#e9efec;
+    --shadow:0 2px 5px rgba(18,48,43,.035),0 12px 30px rgba(18,48,43,.055);
+  }
+  html{scroll-behavior:smooth;}
+  body{
+    background:radial-gradient(ellipse at 12% 0%,rgba(30,145,130,.09),transparent 34rem),
+      linear-gradient(180deg,#f7faf8 0%,var(--paper) 44rem);
+    color:var(--ink);
+  }
+  .wrap{max-width:1160px;padding:34px 28px 0;}
+  header.top{border-bottom:1px solid rgba(7,91,88,.14);padding-bottom:22px;margin-bottom:24px;}
+  .brand{gap:14px;}
+  .brand-mark{width:48px;height:48px;border-radius:15px;background:linear-gradient(145deg,#11988c,#075b58);box-shadow:0 8px 18px rgba(7,91,88,.22);}
+  .brand-mark svg{width:25px;height:25px;}
+  .brand h1{font-size:27px;letter-spacing:-.045em;}
+  .brand p{font-size:13px;letter-spacing:0;color:var(--ink-soft);}
+  .thresh{border-radius:12px;padding:9px 12px;background:rgba(255,255,255,.8);box-shadow:0 2px 7px rgba(18,48,43,.035);}
+  .thresh input{font-weight:700;color:var(--teal-deep);}
+  .connection-status{border-radius:12px;padding:12px 16px;background:#e7f4f0;border-color:#cce6dc;color:var(--teal-deep);}
+  .stat-strip{gap:14px;margin-bottom:26px;}
+  .stat{border-radius:16px;padding:20px 20px 18px;min-height:104px;transition:transform .18s ease,box-shadow .18s ease;}
+  .stat:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(18,48,43,.09);}
+  .stat .n{font-size:34px;letter-spacing:-.04em;}
+  .stat .l{font-size:10px;letter-spacing:.11em;}
+  .stat.expired{background:linear-gradient(135deg,#fff 45%,#fff5f4);}
+  .stat.near{background:linear-gradient(135deg,#fff 45%,#fff8e9);}
+  .stat.valid{background:linear-gradient(135deg,#fff 45%,#f1faf4);}
+  .stat.total{background:linear-gradient(135deg,#fff 45%,#eef8f6);}
+  .panel{border-radius:18px;margin-bottom:18px;overflow:hidden;box-shadow:var(--shadow);transition:box-shadow .18s ease;}
+  .panel:hover{box-shadow:0 5px 18px rgba(18,48,43,.065),0 16px 34px rgba(18,48,43,.045);}
+  .panel-head{padding:18px 22px;background:linear-gradient(100deg,#fff,#fbfdfc);}
+  .panel-head h2{font-size:16px;font-weight:700;letter-spacing:-.025em;display:flex;align-items:center;gap:10px;}
+  .panel-head h2::before{content:"";width:30px;height:30px;border-radius:10px;background:#e8f5f1;box-shadow:inset 0 0 0 1px #d7ece5;flex:0 0 30px;}
+  .panel:nth-of-type(2) .panel-head h2::before{content:"?";display:grid;place-items:center;color:var(--teal-deep);font-size:24px;font-weight:600;line-height:1;}
+  .panel:nth-of-type(3) .panel-head h2::before{content:"?";display:grid;place-items:center;background:#fff5df;box-shadow:inset 0 0 0 1px #f4e4bd;color:var(--amber);font-size:19px;font-weight:700;}
+  .panel:nth-of-type(4) .panel-head h2::before{content:"!";display:grid;place-items:center;background:#fff0ef;box-shadow:inset 0 0 0 1px #f2d9d7;color:var(--red);font-size:17px;font-weight:800;}
+  .panel:nth-of-type(5) .panel-head h2::before{content:"?";display:grid;place-items:center;color:var(--teal-deep);font-size:16px;}
+  .panel-head .sub{font-size:12.5px;line-height:1.45;}
+  .panel-body{padding:22px;}
+  .mode-toggle{border-radius:11px;background:#f2f7f4;padding:4px;}
+  .mode-toggle button{border-radius:8px;padding:8px 13px;transition:background .16s,color .16s;}
+  .mode-toggle button.active{background:var(--teal-deep);box-shadow:0 3px 8px rgba(7,91,88,.2);}
+  .dropzone{min-height:250px;border:1.5px dashed #b9d3ca;border-radius:16px;background:linear-gradient(150deg,#f5faf7,#edf6f2);transition:all .18s ease;}
+  .dropzone:hover{border-color:var(--teal);background:#e7f5ef;transform:translateY(-1px);}
+  .dropzone .icon{width:38px;height:38px;}
+  .field label{font-size:10.5px;letter-spacing:.075em;}
+  .field input,.field select{min-height:42px;padding:10px 12px;border-radius:10px;background:#fbfdfc;border-color:#d6e2dd;transition:border-color .15s,box-shadow .15s,background .15s;}
+  .field input:focus,.field select:focus{outline:none;border-color:#168d80;box-shadow:0 0 0 3px rgba(22,141,128,.13);background:#fff;}
+  .field input[type=checkbox]{width:16px;min-height:16px;accent-color:var(--teal);vertical-align:middle;margin:0 5px 0 0;}
+  .row2{gap:14px;}
+  .detect-note{border-radius:11px;padding:11px 13px;background:#f0f7f4;}
+  .raw-text{border-radius:11px;}
+  .btn{min-height:40px;border-radius:10px;transition:transform .15s,box-shadow .15s,background .15s;}
+  .btn:not(:disabled):hover{transform:translateY(-1px);}
+  .btn-primary{background:linear-gradient(135deg,#087f78,#075b58);box-shadow:0 4px 10px rgba(7,91,88,.16);}
+  .btn-primary:hover{background:linear-gradient(135deg,#099187,#08706a);box-shadow:0 6px 14px rgba(7,91,88,.21);}
+  .btn-ghost{border-radius:9px;}
+  .alert-list{gap:10px;}
+  .alert-row{padding:13px 15px;border-radius:12px;background:#fbfcfb;transition:transform .15s,box-shadow .15s;}
+  .alert-row:hover{transform:translateX(2px);box-shadow:0 4px 12px rgba(18,48,43,.06);}
+  .alert-row.expired{border-color:#edc9c8;background:linear-gradient(100deg,#fff4f2,#fffafa);}
+  .alert-row.near{border-color:#f0dfb7;background:linear-gradient(100deg,#fff9e9,#fffdfa);}
+  .alert-row .dot{width:10px;height:10px;box-shadow:0 0 0 4px rgba(184,61,70,.1);}
+  .alert-row.near .dot{box-shadow:0 0 0 4px rgba(169,107,12,.12);}
+  .alert-row .txt{line-height:1.45;}
+  .alert-row .days{font-size:11px;font-weight:700;border-radius:999px;padding:6px 9px;background:rgba(184,61,70,.09);color:var(--red);}
+  .alert-row.near .days{background:rgba(169,107,12,.1);color:var(--amber);}
+  .alert-row.expired .txt b,.alert-row.expired .days{color:var(--red);}
+  .alert-row.near .txt b{color:#875607;}
+  .temp-reading{padding:12px 14px;border-radius:11px;background:#f8fbf9;line-height:1.45;}
+  .temp-reading.outside{border-color:#e9b8b8;background:linear-gradient(100deg,#fff0ee,#fffafa);box-shadow:inset 3px 0 var(--red);}
+  .temp-badge{display:inline-block;font-weight:700;border:1px solid #d3e9e1;}
+  .filters{gap:7px;}
+  .tab{padding:7px 13px;border-radius:999px;transition:all .15s;}
+  .tab:hover{border-color:#8abbb0;color:var(--teal-deep);}
+  .tab[data-filter="expired"].active{background:var(--red);border-color:var(--red);}
+  .tab[data-filter="near"].active{background:var(--amber);border-color:var(--amber);}
+  .tab[data-filter="valid"].active{background:var(--green);border-color:var(--green);}
+  .search{width:190px;border-radius:11px;padding:9px 12px;background:#fbfdfc;}
+  .lrow{grid-template-columns:minmax(170px,1.7fr) minmax(100px,1fr) minmax(110px,1fr) minmax(82px,.8fr) auto 72px;gap:14px;padding:14px 22px;}
+  .ledger-actions{display:flex;align-items:center;gap:4px;}
+  .form-actions{display:grid;gap:8px;}
+  .lrow:not(.headrow):hover{background:#f8fbf9;}
+  .lrow.headrow{padding-top:12px;color:#72817d;}
+  .lname{font-size:14px;}
+  .mono{font-size:12px;}
+  .icon-btn{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;transition:background .15s,color .15s;}
+  .icon-btn:hover{background:#fff0ef;color:var(--red);}
+  .stamp{transform:none;border-radius:7px;padding:6px 10px;}
+  .stamp::before{border-radius:7px;}
+  .stamp.expired{background:#fff0ef;}
+  .stamp.near{background:#fff6df;}
+  .stamp.valid{background:#edf8f0;}
+  footer{max-width:760px;margin:18px auto 0;line-height:1.6;}
+  :focus-visible{outline:3px solid rgba(8,127,120,.35);outline-offset:2px;}
+
+  @media(max-width:760px){
+    .wrap{padding:22px 18px 0;}
+    .stat-strip{gap:10px;}
+    .scan-grid{gap:16px;}
+    .panel{margin-bottom:14px;}
+    .panel-head{padding:15px 17px;}
+    .panel-body{padding:17px;}
+    .lrow{grid-template-columns:1fr 1fr;gap:8px 12px;padding:14px 17px;}
+    .lrow.headrow{display:none;}
+    .lrow > div{min-width:0;}
+    .lrow .lname{grid-column:1 / -1;}
+    .lrow > div:nth-child(2)::before{content:"Mfg";font:600 9px 'IBM Plex Sans',sans-serif;text-transform:uppercase;letter-spacing:.07em;color:#82918d;margin-right:8px;}
+    .lrow > div:nth-child(3)::before{content:"Expiry";font:600 9px 'IBM Plex Sans',sans-serif;text-transform:uppercase;letter-spacing:.07em;color:#82918d;margin-right:8px;}
+    .lrow > div:nth-child(4){font-weight:700;}
+    .lrow > div:nth-child(5){justify-content:flex-start;}
+    .lrow > div:nth-child(6){position:absolute;right:14px;top:12px;}
+    .lrow{position:relative;padding-right:52px;}
+    .search{flex:1 1 100%;width:100%;}
+    .filters{width:100%;}
+    .filters .tab{flex:1;padding-left:8px;padding-right:8px;}
+    .temp-reading{align-items:flex-start;}
+  }
+  @media(max-width:480px){
+    .wrap{padding:16px 12px 0;}
+    header.top{align-items:flex-start;margin-bottom:18px;padding-bottom:17px;}
+    .brand{align-items:flex-start;gap:10px;}
+    .brand-mark{width:42px;height:42px;border-radius:13px;}
+    .brand h1{font-size:23px;}
+    .brand p{font-size:11.5px;line-height:1.4;max-width:245px;}
+    .top-actions{width:100%;}
+    .thresh{width:100%;justify-content:center;}
+    .stat-strip{grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px;}
+    .stat{min-height:88px;padding:15px 14px 13px;border-radius:13px;}
+    .stat .n{font-size:29px;}
+    .stat .l{font-size:9px;letter-spacing:.09em;}
+    .panel{border-radius:15px;}
+    .panel-head{padding:14px;}
+    .panel-head h2{font-size:14.5px;}
+    .panel-head h2::before{width:27px;height:27px;flex-basis:27px;border-radius:9px;}
+    .panel-head .sub{font-size:11.5px;}
+    .panel-body{padding:14px;}
+    .mode-toggle{width:100%;}
+    .mode-toggle button{flex:1;padding:8px 7px;font-size:11.5px;}
+    .dropzone{min-height:190px;}
+    .row2{grid-template-columns:1fr;gap:0;}
+    .row2.temp-controls{grid-template-columns:1fr 1fr;gap:8px;}
+    .lrow{padding:13px 14px 13px 14px;padding-right:48px;}
+    .lrow > div:nth-child(2),.lrow > div:nth-child(3){font-size:11px;}
+    .mono{font-size:11px;}
+    .stamp{font-size:9px;padding:5px 7px;}
+    .connection-status{align-items:flex-start;font-size:12px;}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important;}
+  }
+
+  /* Sidebar app shell and responsive internal views */
+  body{padding:0;}
+  .app-shell{min-height:100vh;display:flex;align-items:stretch;}
+  .sidebar{position:sticky;top:0;z-index:30;width:250px;height:100vh;min-height:600px;flex:0 0 250px;display:flex;flex-direction:column;padding:22px 14px 16px;background:rgba(251,253,252,.97);border-right:1px solid #dbe6e1;box-shadow:5px 0 22px rgba(21,55,49,.035);transition:width .22s ease,flex-basis .22s ease,padding .22s ease;}
+  .sidebar-brand{height:46px;display:flex;align-items:center;gap:11px;padding:0 8px 18px;border-bottom:1px solid #e7eeeb;margin-bottom:21px;white-space:nowrap;}
+  .sidebar-mark{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:11px;background:linear-gradient(145deg,#11988c,#075b58);color:#fff;box-shadow:0 5px 12px rgba(7,91,88,.18);}
+  .sidebar-mark svg{width:21px;height:21px;}.sidebar-brand-name{font:700 17px 'Space Grotesk',sans-serif;letter-spacing:-.035em;color:#173532;flex:1;}
+  .collapse-btn,.mobile-menu-btn{width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:#70827d;cursor:pointer;}
+  .collapse-btn:hover,.mobile-menu-btn:hover{background:#eaf4f0;color:var(--teal-deep);}.collapse-btn svg,.mobile-menu-btn svg{width:19px;height:19px;}
+  .nav-caption{padding:0 11px;margin:0 0 9px;color:#9aa9a5;font:700 9px 'IBM Plex Sans',sans-serif;letter-spacing:.14em;}
+  .side-nav{display:flex;flex-direction:column;gap:5px;}.nav-item{position:relative;width:100%;min-height:44px;display:flex;align-items:center;gap:12px;padding:0 12px;border:0;border-radius:11px;background:transparent;color:#61736e;text-align:left;font:600 13px 'IBM Plex Sans',sans-serif;cursor:pointer;transition:background .16s,color .16s,transform .16s;}
+  .nav-item svg{width:19px;height:19px;flex:0 0 19px;}.nav-item:hover{background:#edf5f2;color:var(--teal-deep);transform:translateX(2px);}.nav-item.active{background:linear-gradient(110deg,#087f78,#08706b);color:#fff;box-shadow:0 5px 13px rgba(8,127,120,.2);}.nav-item.active::before{content:"";position:absolute;left:-14px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:#13a99a;}
+  .nav-count{margin-left:auto;min-width:21px;padding:3px 6px;border-radius:999px;background:#fff;color:var(--red);font:700 10px 'IBM Plex Mono',monospace;text-align:center;}.nav-item.active .nav-count{background:rgba(255,255,255,.2);color:#fff;}
+  .sidebar-bottom{margin-top:auto;padding-top:15px;border-top:1px solid #e7eeeb;}.sidebar-footnote{padding:13px 10px 0;color:#a0adaa;font-size:10.5px;}
+  .main-shell{min-width:0;flex:1;}.wrap{max-width:none;width:100%;padding:26px clamp(20px,3vw,42px) 32px;}
+  header.top{align-items:center;min-height:65px;}header.top .brand-mark{display:none;}header.top .brand{gap:0;}header.top .brand h1{font-size:14px;color:#7f908b;letter-spacing:.08em;text-transform:uppercase;}header.top .brand p{display:none;}
+  .top-actions{display:flex;align-items:center;gap:12px;}.page-context{display:flex;flex-direction:column;gap:3px;}.page-context .eyebrow{font-size:9px;font-weight:700;letter-spacing:.12em;color:#8b9b96;}.page-context strong{font:700 16px 'Space Grotesk',sans-serif;color:#173532;}.mobile-menu-btn{display:none;}
+  [data-view][hidden]{display:none!important;}.stat-strip[data-view]{display:grid;}.stat-strip[data-view][hidden]{display:none!important;}
+  .report-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:24px;}.report-metric{padding:18px;border:1px solid var(--line-soft);border-radius:13px;background:linear-gradient(145deg,#fff,#f8fbf9);}.report-metric span{display:block;color:var(--ink-soft);font-size:11px;font-weight:600;}.report-metric strong{display:block;margin-top:8px;font:700 27px 'Space Grotesk',sans-serif;color:var(--ink);}.report-section-title{margin:22px 0 11px;font-size:13px;font-weight:700;color:var(--ink);}.report-bars{display:grid;gap:10px;}.report-bar-row{display:grid;grid-template-columns:100px 1fr 36px;align-items:center;gap:12px;font-size:12px;color:var(--ink-soft);}.report-bar-track{height:10px;border-radius:999px;background:#edf2ef;overflow:hidden;}.report-bar-fill{height:100%;border-radius:inherit;background:var(--teal);}.report-bar-row.expired .report-bar-fill{background:var(--red);}.report-bar-row.near .report-bar-fill{background:var(--amber);}.report-bar-row.valid .report-bar-fill{background:var(--green);}.report-bar-value{text-align:right;font:600 11px 'IBM Plex Mono',monospace;color:var(--ink);}
+  .report-empty{min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:25px;}.report-empty[hidden]{display:none;}.empty-icon{width:48px;height:48px;display:grid;place-items:center;margin-bottom:12px;border-radius:15px;background:#e8f5f1;color:var(--teal-deep);font:700 20px 'Space Grotesk',sans-serif;}.report-empty strong{font:700 16px 'Space Grotesk',sans-serif;}.report-empty p{max-width:350px;color:var(--ink-soft);font-size:13px;line-height:1.55;}
+  .settings-body{display:grid;gap:12px;}.settings-card{display:flex;align-items:center;gap:14px;padding:16px;border:1px solid var(--line-soft);border-radius:13px;background:#fcfdfc;}.settings-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:12px;background:#fff5e2;color:var(--amber);font-weight:800;}.settings-icon.connection-icon{background:#e8f5f1;color:var(--teal);font-size:12px;}.settings-copy{flex:1;min-width:0;}.settings-copy strong{font-size:13px;}.settings-copy p{margin:4px 0 0;color:var(--ink-soft);font-size:12px;line-height:1.45;}.settings-thresh{flex:0 0 auto;}.settings-thresh input{width:52px;}.sidebar-scrim{display:none;}
+  body.sidebar-collapsed .sidebar{width:78px;flex-basis:78px;padding-left:11px;padding-right:11px;}body.sidebar-collapsed .sidebar-brand{justify-content:center;padding-left:0;padding-right:0;}body.sidebar-collapsed .sidebar-brand-name,body.sidebar-collapsed .nav-caption,body.sidebar-collapsed .nav-item span,body.sidebar-collapsed .sidebar-footnote{display:none;}body.sidebar-collapsed .collapse-btn{position:absolute;top:25px;right:5px;transform:rotate(180deg);}body.sidebar-collapsed .nav-item{justify-content:center;padding:0;}body.sidebar-collapsed .nav-count{position:absolute;top:2px;right:3px;min-width:16px;padding:2px 4px;font-size:8px;}
+  @media(max-width:900px){.sidebar{width:220px;flex-basis:220px;}body.sidebar-collapsed .sidebar{width:72px;flex-basis:72px;}.wrap{padding-left:22px;padding-right:22px;}.lrow{grid-template-columns:minmax(145px,1.5fr) minmax(82px,.8fr) minmax(95px,.9fr) minmax(70px,.7fr) auto 32px;gap:9px;padding-left:16px;padding-right:16px;}}
+  @media(max-width:700px){.app-shell{display:block;}.collapse-btn{display:none;}.sidebar{position:fixed;left:0;top:0;bottom:0;width:min(290px,84vw);height:100dvh;min-height:0;transform:translateX(-102%);transition:transform .22s ease;box-shadow:12px 0 32px rgba(12,43,38,.16);}body.mobile-nav-open .sidebar{transform:translateX(0);}body.mobile-nav-open .sidebar-scrim{display:block;position:fixed;inset:0;z-index:25;border:0;background:rgba(13,35,32,.34);backdrop-filter:blur(2px);}body.sidebar-collapsed .sidebar{width:min(290px,84vw);padding:22px 14px 16px;}body.sidebar-collapsed .sidebar-brand{justify-content:flex-start;padding:0 8px 18px;}body.sidebar-collapsed .sidebar-brand-name,body.sidebar-collapsed .nav-caption,body.sidebar-collapsed .nav-item span,body.sidebar-collapsed .sidebar-footnote{display:initial;}body.sidebar-collapsed .nav-caption,body.sidebar-collapsed .sidebar-footnote{display:block;}body.sidebar-collapsed .sidebar-brand-name{display:block;}body.sidebar-collapsed .collapse-btn{position:static;transform:none;}body.sidebar-collapsed .nav-item{justify-content:flex-start;padding:0 12px;}body.sidebar-collapsed .nav-count{position:static;min-width:21px;padding:3px 6px;font-size:10px;}.main-shell{width:100%;}.wrap{padding:16px 16px 28px;}header.top{min-height:55px;margin-bottom:16px;padding-bottom:14px;}header.top .brand h1{display:none;}.top-actions{width:100%;}.mobile-menu-btn{display:grid;flex:0 0 36px;background:#fff;border:1px solid var(--line);}.page-context{margin-right:auto;}.page-context strong{font-size:16px;}.connection-status{margin-bottom:14px;}.report-summary{grid-template-columns:1fr 1fr;gap:9px;}.report-metric{padding:14px;}.report-metric strong{font-size:23px;}.settings-card{flex-wrap:wrap;}.settings-copy{flex:1 1 calc(100% - 60px);}.settings-thresh{margin-left:51px;}}
+  @media(max-width:420px){.wrap{padding-left:11px;padding-right:11px;}.report-bar-row{grid-template-columns:77px 1fr 28px;gap:8px;}.settings-card{padding:13px;}.settings-thresh{margin-left:0;}#settingsRetryBtn{margin-left:51px;}}
+
+  /* Screenshot-inspired live dashboard */
+  .header-tools{display:flex;align-items:center;gap:13px;}.sync-label{font-size:11.5px;color:#7a8d87;white-space:nowrap;}.notification-btn{position:relative;width:42px;height:42px;display:grid;place-items:center;border:1px solid #e4ece8;border-radius:13px;background:#fff;color:#647b74;cursor:pointer;}.notification-btn:hover{background:#f2f8f5;color:var(--teal-deep);}.notification-btn svg{width:20px;height:20px;}.notification-btn span{position:absolute;right:8px;top:8px;width:7px;height:7px;border-radius:50%;background:#e75f52;box-shadow:0 0 0 2px #fff;}.notification-btn span[hidden]{display:none;}.user-avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:50%;background:#dff0e9;color:#08796f;font-size:11px;font-weight:700;letter-spacing:.03em;}
+  .dashboard-hero{position:relative;isolation:isolate;min-height:207px;display:flex;align-items:center;justify-content:space-between;gap:24px;overflow:hidden;margin:2px 0 22px;padding:32px 40px;border-radius:24px;color:#fff;background:linear-gradient(112deg,#075f59 0%,#087d72 55%,#27a88e 100%);box-shadow:0 18px 38px rgba(4,98,86,.16);}
+  .hero-copy{position:relative;z-index:2;max-width:610px;}.hero-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;color:#baf1dc;}.hero-copy h2{margin:15px 0 7px;font:600 clamp(23px,3vw,32px) 'Space Grotesk',sans-serif;letter-spacing:-.04em;}.hero-copy p{margin:0;color:rgba(255,255,255,.87);font-size:13.5px;line-height:1.5;}
+  .hero-action{position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:13px 17px;border:0;border-radius:13px;background:#eff7bf;color:#173f37;font:700 12px 'IBM Plex Sans',sans-serif;box-shadow:0 6px 16px rgba(3,47,42,.16);cursor:pointer;transition:transform .16s,box-shadow .16s;}.hero-action:hover{transform:translateY(-2px);box-shadow:0 9px 20px rgba(3,47,42,.22);}.hero-action span{font-size:18px;font-weight:500;line-height:12px;}
+  .hero-orbit{position:absolute;z-index:-1;border:1px solid rgba(255,255,255,.18);border-radius:50%;pointer-events:none;}.hero-orbit-one{width:360px;height:360px;right:35px;top:-125px;box-shadow:0 0 0 34px rgba(255,255,255,.035),0 0 0 78px rgba(255,255,255,.025);}.hero-orbit-two{width:105px;height:105px;right:95px;top:40px;background:rgba(204,255,228,.12);border:0;}
+  .dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 19px;}.dashboard-stats .stat{min-height:154px;padding:20px 22px 16px;border-radius:17px;box-shadow:none;}.dashboard-stats .stat:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(18,48,43,.08);}.dashboard-stats .stat::after{width:4px;}.dashboard-stats .stat.total{border-color:#c9e8dc;background:linear-gradient(135deg,#f0fbf6,#e7f7ef);}.dashboard-stats .stat.near{border-color:#f3dfb4;background:linear-gradient(135deg,#fff9e9,#fff5df);}.dashboard-stats .stat.expired{border-color:#f2d2ca;background:linear-gradient(135deg,#fff3ef,#ffebe5);}.dashboard-stats .stat.storage-stat{border:1px solid #d3e0fb;background:linear-gradient(135deg,#f1f5ff,#eaf0ff);}.dashboard-stats .stat.storage-stat::after{background:#7192e8;}.dashboard-stats .metric-top{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#6c817a;font-size:12px;}.dashboard-stats .metric-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:rgba(255,255,255,.58);}.metric-icon svg{width:19px;height:19px;}.teal-icon{color:#078577;background:#ccefe0!important;}.amber-icon{color:#af760c;background:#fff0d4!important;}.red-icon{color:#d65346;background:#ffebe5!important;}.blue-icon{color:#587ac7;background:#dfe8ff!important;}.dashboard-stats .n{margin-top:10px;font-size:35px;letter-spacing:-.045em;color:#173532;}.dashboard-stats .stat.near .n{color:#a96b0c;}.dashboard-stats .stat.expired .n{color:#c84d40;}.dashboard-stats .stat.storage-stat .n{color:#4c70bd;}.dashboard-stats .metric-foot{margin-top:8px;color:#73847f;font-size:11px;}.dashboard-stats .stat.expired .metric-foot{color:#c84d40;}
+  .dashboard-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.82fr);gap:15px;margin-bottom:18px;}.dashboard-card{min-width:0;padding:19px 20px;border:1px solid #e0eae5;border-radius:17px;background:rgba(255,255,255,.94);box-shadow:0 5px 18px rgba(18,48,43,.035);}.dashboard-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:17px;}.dashboard-card-head h2{margin:0;font:700 15px 'Space Grotesk',sans-serif;letter-spacing:-.02em;color:#1b3834;}.dashboard-card-head p{margin:5px 0 0;color:#899a94;font-size:10.5px;line-height:1.45;}.text-link{flex:0 0 auto;border:0;background:transparent;color:#078278;font:700 10.5px 'IBM Plex Sans',sans-serif;cursor:pointer;}.text-link:hover{color:#075b58;text-decoration:underline;}.text-link span{font-size:14px;margin-left:3px;}
+  .expiry-chart{display:grid;gap:15px;padding:6px 0 4px;}.chart-row{display:grid;grid-template-columns:92px minmax(50px,1fr) 30px;align-items:center;gap:10px;}.chart-label{font-size:10.5px;color:#73847f;}.chart-track{height:10px;overflow:hidden;border-radius:999px;background:#eff3f1;}.chart-fill{height:100%;min-width:0;border-radius:inherit;transition:width .35s ease;}.chart-row.expired .chart-fill{background:linear-gradient(90deg,#ee7868,#e55c4e);}.chart-row.near .chart-fill{background:linear-gradient(90deg,#f0c15e,#e3a735);}.chart-row.valid .chart-fill{background:linear-gradient(90deg,#63c59b,#31a77e);}.chart-value{text-align:right;color:#425a54;font:600 10px 'IBM Plex Mono',monospace;}.dashboard-empty{padding:21px 12px;text-align:center;color:#879790;font-size:11.5px;line-height:1.55;}.dashboard-empty[hidden]{display:none;}.dashboard-alert-list{display:grid;gap:8px;}.dashboard-alert{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid #edf0ed;border-radius:10px;background:#fcfdfc;}.dashboard-alert.expired{border-color:#f3d8d2;background:#fff8f6;}.dashboard-alert.near{border-color:#f4e5c6;background:#fffbf1;}.dashboard-alert.temp{border-color:#f3d8d2;background:#fff8f6;}.dashboard-alert-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#e15f50;}.dashboard-alert.near .dashboard-alert-dot{background:#dfa332;}.dashboard-alert-copy{min-width:0;flex:1;}.dashboard-alert-copy strong{display:block;overflow:hidden;color:#344d47;font-size:10.5px;text-overflow:ellipsis;white-space:nowrap;}.dashboard-alert-copy span{display:block;margin-top:2px;color:#8a9993;font-size:9.5px;}.dashboard-alert-tag{color:#b64b40;font:600 9px 'IBM Plex Mono',monospace;white-space:nowrap;}.dashboard-alert.near .dashboard-alert-tag{color:#a56d0c;}
+  .inventory-preview-card{grid-column:1/-1;padding-bottom:8px;}.dashboard-table-wrap{overflow-x:auto;}.dashboard-table{width:100%;border-collapse:collapse;text-align:left;}.dashboard-table th{padding:10px 8px;border-bottom:1px solid #edf1ee;color:#899994;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;white-space:nowrap;}.dashboard-table td{padding:12px 8px;border-bottom:1px solid #f0f3f1;color:#61736d;font-size:11px;white-space:nowrap;}.dashboard-table tbody tr:last-child td{border-bottom:0;}.dashboard-table td:first-child{color:#243e38;font-weight:600;}.dashboard-table .table-batch{color:#8b9a95;font:10px 'IBM Plex Mono',monospace;}.dashboard-status{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:700;}.dashboard-status.expired{background:#ffebe7;color:#c74f42;}.dashboard-status.near{background:#fff2d9;color:#a96b0c;}.dashboard-status.valid{background:#e9f6ee;color:#287653;}
+  .scan-panel{margin-top:4px;}
+  @media(max-width:900px){.dashboard-grid{grid-template-columns:1fr 1fr;}.dashboard-card-head{flex-wrap:wrap;}.inventory-preview-card{grid-column:1/-1;}}
+  @media(max-width:700px){.header-tools{gap:8px;}.sync-label{display:none;}.dashboard-hero{min-height:225px;align-items:flex-start;flex-direction:column;justify-content:center;padding:27px 24px;border-radius:20px;gap:19px;}.hero-copy h2{max-width:420px;font-size:26px;}.hero-copy p{font-size:12px;max-width:400px;}.hero-action{padding:11px 14px;}.hero-orbit-one{right:-130px;}.hero-orbit-two{right:25px;}.dashboard-stats{gap:10px;}.dashboard-stats .stat{min-height:138px;padding:16px;}.dashboard-stats .n{font-size:31px;}.dashboard-grid{grid-template-columns:1fr;gap:11px;}.inventory-preview-card{grid-column:auto;}.dashboard-card{padding:16px;}.dashboard-table{min-width:540px;}}
+  @media(max-width:420px){.dashboard-stats{grid-template-columns:1fr 1fr;}.dashboard-stats .stat{min-height:128px;padding:14px 12px;}.dashboard-stats .metric-top{font-size:10.5px;}.dashboard-stats .metric-icon{width:32px;height:32px;border-radius:10px;}.dashboard-stats .n{font-size:28px;}.dashboard-stats .metric-foot{font-size:9.5px;}.hero-copy h2{font-size:23px;}.hero-eyebrow{font-size:9px;}.notification-btn,.user-avatar{width:36px;height:36px;}.chart-row{grid-template-columns:80px minmax(45px,1fr) 24px;gap:7px;}}
+
+  /* Inventory expiry distribution chart */
+  .inventory-chart-card{margin:17px 20px 0;padding:19px 20px;border:1px solid #e0eae5;border-radius:16px;background:linear-gradient(135deg,#fff,#f9fcfa);}
+  .inventory-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px;}
+  .inventory-chart-head h2{margin:0;color:#1b3834;font:700 15px 'Space Grotesk',sans-serif;letter-spacing:-.02em;}
+  .inventory-chart-head p{margin:5px 0 0;color:#899a94;font-size:11px;line-height:1.45;}
+  .chart-unit{padding:6px 8px;border:1px solid #e7efea;border-radius:7px;color:#81928b;font:700 8px 'IBM Plex Sans',sans-serif;letter-spacing:.1em;white-space:nowrap;}
+  .inventory-chart-content{display:grid;grid-template-columns:150px minmax(0,1fr);align-items:center;gap:24px;min-height:148px;}
+  .inventory-chart-content[hidden]{display:none;}
+  .inventory-donut{width:142px;height:142px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(#e5ece8 0deg 360deg);position:relative;}
+  .inventory-donut::before{content:"";position:absolute;inset:13px;border-radius:50%;background:#fff;}
+  .inventory-donut-center{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .inventory-donut-center strong{color:#173b35;font:700 28px 'Space Grotesk',sans-serif;letter-spacing:-.04em;}
+  .inventory-donut-center span{margin-top:1px;color:#8a9993;font-size:9px;}
+  .inventory-legend{display:grid;gap:13px;}
+  .inventory-legend-row{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;align-items:center;gap:9px;color:#667a73;font-size:11px;}
+  .inventory-legend-swatch{width:9px;height:9px;border-radius:3px;background:var(--legend-color);}
+  .inventory-legend-row strong{color:#304b43;font:600 11px 'IBM Plex Mono',monospace;}
+  .inventory-legend-row .legend-share{min-width:38px;color:#9aa8a2;text-align:right;font:10px 'IBM Plex Mono',monospace;}
+  .inventory-chart-empty{min-height:110px;display:grid;place-items:center;padding:22px;text-align:center;color:#82928c;font-size:12px;line-height:1.55;}
+  .inventory-chart-empty[hidden]{display:none;}
+  @media(max-width:700px){.inventory-chart-card{margin:12px 13px 0;padding:16px;border-radius:14px;}.inventory-chart-content{grid-template-columns:124px minmax(0,1fr);gap:15px;min-height:125px;}.inventory-donut{width:118px;height:118px;}.inventory-legend{gap:10px;}.inventory-legend-row{grid-template-columns:9px minmax(0,1fr) auto;gap:7px;font-size:10px;}.inventory-legend-row .legend-share{display:none;}}
+  @media(max-width:420px){.inventory-chart-head{gap:8px;}.inventory-chart-head h2{font-size:13.5px;}.inventory-chart-head p{max-width:225px;font-size:10px;}.chart-unit{font-size:7px;padding:5px 6px;}.inventory-chart-content{grid-template-columns:105px minmax(0,1fr);gap:12px;}.inventory-donut{width:100px;height:100px;}.inventory-donut::before{inset:10px;}.inventory-donut-center strong{font-size:24px;}.inventory-legend-row{font-size:9.5px;}}
+
+  /* Standalone scan page, matching the package-entry reference */
+  .scan-panel[data-view="scan"]{margin-top:3px;overflow:hidden;border-radius:19px;}
+  .scan-panel[data-view="scan"] .panel-head{min-height:94px;padding:20px 28px;border-bottom:1px solid #e7efeb;}
+  .scan-panel[data-view="scan"] .panel-head h2::before{content:"!";display:grid;place-items:center;background:#fff0ef;box-shadow:inset 0 0 0 1px #f2d9d7;color:var(--red);font-size:17px;font-weight:800;}
+  .scan-panel[data-view="scan"] .panel-head .sub{font-size:12px;}
+  .scan-panel[data-view="scan"] .panel-body{padding:27px 28px 29px;}
+  .scan-grid.manual-mode{grid-template-columns:1fr;}
+  .scan-grid.manual-mode>div:first-child{display:none;}
+  .scan-grid.manual-mode>div:last-child{max-width:760px;margin:0 auto;width:100%;}
+  .scan-panel .dropzone{min-height:312px;}
+  .scan-panel .dropzone.hasimg{min-height:312px;}
+  .form-feedback{margin-top:10px;padding:11px 13px;border:1px solid #cbe7d7;border-radius:10px;background:#eff9f3;color:#26734f;font-size:12px;line-height:1.45;}
+  .form-feedback.error{border-color:#f0d1ce;background:#fff3f1;color:#b83d46;}
+  .form-feedback[hidden]{display:none;}
+  .scan-panel .mode-toggle{background:#f2f7f4;border-color:#dce9e4;border-radius:12px;padding:4px;}
+  .scan-panel .mode-toggle button{min-height:40px;padding:8px 16px;border-radius:9px;}
+  @media(max-width:700px){.scan-panel[data-view="scan"] .panel-head{padding:17px 17px;}.scan-panel[data-view="scan"] .panel-body{padding:17px;}.scan-panel .dropzone,.scan-panel .dropzone.hasimg{min-height:220px;}}
+
+  /* Refined Scan a package experience */
+  .scan-panel[data-view="scan"]{border:1px solid #d8e8e1;border-radius:22px;background:linear-gradient(145deg,#fff 0%,#fbfdfc 100%);box-shadow:0 16px 42px rgba(16,65,54,.075);}
+  .scan-panel[data-view="scan"] .panel-head{min-height:96px;padding:22px 30px;background:linear-gradient(100deg,#fff 0%,#f8fcf9 100%);}
+  .scan-panel[data-view="scan"] .panel-head h2{gap:12px;font-size:18px;letter-spacing:-.035em;color:#173a34;}
+  .scan-panel[data-view="scan"] .panel-head h2::before{display:none;}
+  .scan-heading-icon{width:38px;height:38px;flex:0 0 38px;padding:9px;border:1px solid #f3d8d2;border-radius:12px;background:linear-gradient(145deg,#fff5f2,#ffebe7);color:#c95549;}
+  .scan-panel[data-view="scan"] .panel-head .sub{margin:5px 0 0 50px;color:#758982;font-size:12px;}
+  .scan-panel[data-view="scan"] .panel-body{padding:28px 30px 32px;}
+  .scan-panel[data-view="scan"] .scan-grid{grid-template-columns:minmax(260px,.98fr) minmax(360px,1fr);gap:26px;align-items:stretch;}
+  .scan-panel[data-view="scan"] .scan-grid>div:first-child{display:flex;flex-direction:column;}
+  .scan-panel .dropzone,.scan-panel .dropzone.hasimg{position:relative;isolation:isolate;flex:1;min-height:340px;border:1.5px dashed #b8d7c9;border-radius:19px;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.92),transparent 45%),linear-gradient(145deg,#f2faf6,#e9f5ef);gap:13px;padding:26px;box-shadow:inset 0 1px 0 rgba(255,255,255,.8);}
+  .scan-panel .dropzone:not(.hasimg)::before{content:"";position:absolute;z-index:0;width:180px;height:180px;left:50%;top:50%;transform:translate(-50%,-62%);border-radius:50%;background:rgba(202,237,220,.27);pointer-events:none;}
+  .scan-panel .dropzone:hover{border-color:#68ad95;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.95),transparent 46%),linear-gradient(145deg,#effaf4,#e3f3eb);box-shadow:0 10px 24px rgba(27,116,82,.07);}
+  .scan-panel .dropzone>*{position:relative;z-index:1;}.scan-panel .dropzone .icon{width:62px;height:62px;padding:16px;border-radius:20px;background:#d9f1e5;color:#08786e;box-shadow:0 7px 18px rgba(23,119,85,.11);}
+  .scan-panel .dropzone b{font-size:14px!important;color:#24463e;}
+  .scan-panel .dropzone .hint{max-width:250px;color:#758c83;font-size:12px;line-height:1.5;}
+  .scan-panel .dropzone img{height:340px;border-radius:17px;background:#18332e;}
+  .scan-panel .dz-actions{right:12px;bottom:12px;}
+  .scan-panel .dz-actions button{padding:8px 12px;border:1px solid rgba(255,255,255,.24);border-radius:9px;background:rgba(15,39,34,.8);font-weight:600;backdrop-filter:blur(8px);}
+  .scan-panel .ocr-status{margin-top:12px;padding:10px 12px;border:1px solid #e2eee8;border-radius:10px;background:#f7fbf8;color:#527067;}
+  .scan-panel .scan-grid>div:last-child{padding:2px 0;}
+  .scan-panel .field{margin-bottom:16px;}
+  .scan-panel .field label{margin-bottom:7px;color:#58736a;font-size:10px;letter-spacing:.105em;}
+  .scan-panel .field input:not([type=checkbox]),.scan-panel .field select{min-height:50px;border-color:#d4e3dc;border-radius:11px;background:#fbfdfc;font-size:13px;}
+  .scan-panel .field.name input{font-family:'IBM Plex Sans',sans-serif;font-size:14px;}
+  .scan-panel .field input:not([type=checkbox]):hover,.scan-panel .field select:hover{border-color:#a9cbb9;background:#fff;}
+  .scan-panel .row2{gap:14px;}
+  .scan-panel .temp-sensitive-field{margin:1px 0 13px;padding:12px 13px;border:1px solid #e4eee8;border-radius:11px;background:#f8fbf9;}
+  .scan-panel .temp-sensitive-field label{display:flex;align-items:center;margin:0;color:#47665c;font-size:10px;letter-spacing:.07em;cursor:pointer;}
+  .scan-panel .temp-controls{padding:13px 13px 0;border:1px solid #dcebe3;border-radius:11px;background:#f6fbf8;}
+  .scan-panel .temp-controls .field{margin-bottom:13px;}
+  .scan-panel .btn-full{min-height:50px;border-radius:12px;font-size:13px;letter-spacing:.01em;}
+  .scan-panel .form-feedback{margin-top:12px;border-radius:11px;padding:12px 14px;font-size:12px;}
+  .scan-panel .detect-note,.scan-panel .raw-text{border-radius:11px;padding:11px 13px;}
+  .scan-panel .mode-toggle{gap:3px;padding:4px;border:1px solid #dce9e3;border-radius:13px;background:#f0f6f2;}
+  .scan-panel .mode-toggle button{min-width:112px;min-height:40px;padding:9px 14px;border-radius:9px;color:#667d74;font-size:12px;}
+  .scan-panel .mode-toggle button.active{background:linear-gradient(135deg,#087f78,#075b58);box-shadow:0 4px 11px rgba(7,91,88,.2);color:#fff;}
+  .scan-grid.manual-mode{grid-template-columns:1fr!important;}
+  .scan-grid.manual-mode>div:first-child{display:none!important;}
+  .scan-grid.manual-mode>div:last-child{max-width:790px;margin:0 auto;width:100%;}
+  @media(max-width:980px){.scan-panel[data-view="scan"] .scan-grid{grid-template-columns:minmax(220px,.85fr) minmax(330px,1fr);gap:19px;}}
+  @media(max-width:760px){.scan-panel[data-view="scan"] .panel-head{align-items:flex-start;padding:17px 18px;}.scan-panel[data-view="scan"] .panel-head .sub{margin-left:0;}.scan-panel[data-view="scan"] .panel-body{padding:19px 18px 22px;}.scan-panel[data-view="scan"] .scan-grid{grid-template-columns:1fr;gap:18px;}.scan-panel .dropzone,.scan-panel .dropzone.hasimg{min-height:245px;}.scan-panel .dropzone img{height:245px;}.scan-panel .scan-grid>div:first-child{display:flex!important;}.scan-panel .scan-grid.manual-mode>div:first-child{display:none!important;}.scan-panel .scan-grid.manual-mode{grid-template-columns:1fr!important;}.scan-panel .mode-toggle{width:auto;}.scan-panel .mode-toggle button{min-width:100px;}}
+  @media(max-width:520px){.scan-panel[data-view="scan"] .panel-head{flex-direction:column;gap:14px;}.scan-panel .mode-toggle{width:100%;}.scan-panel .mode-toggle button{flex:1;min-width:0;}.scan-panel[data-view="scan"] .panel-body{padding:15px 13px 18px;}.scan-panel .row2:not(.temp-controls){grid-template-columns:1fr;gap:0;}.scan-panel .dropzone,.scan-panel .dropzone.hasimg{min-height:215px;padding:20px;}.scan-panel .dropzone img{height:215px;}.scan-panel .field{margin-bottom:13px;}}
+
+  /* Account authentication and profile */
+  .app-shell[hidden],.auth-screen[hidden]{display:none!important;}
+  .auth-screen{min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(ellipse at 15% 0%,rgba(30,145,130,.1),transparent 32rem),linear-gradient(180deg,#f7faf8,var(--paper));}
+  .auth-card{width:min(100%,460px);padding:34px 36px 27px;border:1px solid #dbe9e2;border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 20px 55px rgba(18,63,53,.11);}
+  .auth-brand{display:flex;align-items:center;gap:11px;margin-bottom:32px;color:#173a34;font:700 18px 'Space Grotesk',sans-serif;letter-spacing:-.03em;}
+  .auth-brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(145deg,#11988c,#075b58);color:#fff;box-shadow:0 5px 13px rgba(7,91,88,.2);}.auth-brand-mark svg{width:23px;height:23px;}
+  .auth-heading .eyebrow{margin:0;color:#078278;font-size:9px;font-weight:700;letter-spacing:.14em;}.auth-heading h1{margin:9px 0 5px;color:#183a34;font:700 26px 'Space Grotesk',sans-serif;letter-spacing:-.04em;}.auth-heading>p:last-child{margin:0 0 23px;color:#75877f;font-size:12.5px;line-height:1.5;}
+  .auth-form .field{margin-bottom:15px;}.auth-form .field[hidden]{display:none;}.auth-form label,.profile-field label{display:block;margin-bottom:7px;color:#58736a;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;}.auth-form input,.profile-field input{width:100%;min-height:47px;padding:11px 13px;border:1px solid #d4e3dc;border-radius:11px;background:#fbfdfc;color:#193b34;font:13px 'IBM Plex Sans',sans-serif;}.auth-form input:focus,.profile-field input:focus{outline:none;border-color:#168d80;box-shadow:0 0 0 3px rgba(22,141,128,.12);background:#fff;}.profile-field input[readonly]{background:#f3f7f5;color:#84948e;}
+  .auth-submit{min-height:48px;margin-top:3px;border-radius:11px;}.auth-switch-line{margin:18px 0 0;text-align:center;color:#778981;font-size:12px;}.auth-switch{border:0;background:transparent;color:#087f78;font:700 12px 'IBM Plex Sans',sans-serif;cursor:pointer;}.auth-switch:hover{text-decoration:underline;}.auth-security-note{margin:24px 0 0;padding-top:15px;border-top:1px solid #edf2ef;text-align:center;color:#91a099;font-size:10px;}
+  .auth-feedback,.profile-feedback{margin:0 0 15px;padding:11px 12px;border:1px solid #f0d1ce;border-radius:10px;background:#fff3f1;color:#b83d46;font-size:12px;line-height:1.45;}.auth-feedback[hidden],.profile-feedback[hidden]{display:none;}.profile-feedback{margin:0;color:#26734f;border-color:#cbe7d7;background:#eff9f3;}.profile-feedback.error{color:#b83d46;border-color:#f0d1ce;background:#fff3f1;}
+  .account-menu-wrap{position:relative;}.user-avatar{display:flex;align-items:center;justify-content:center;gap:5px;padding:0 7px 0 0;border:0;cursor:pointer;transition:box-shadow .16s,transform .16s;}.user-avatar:hover,.user-avatar[aria-expanded="true"]{box-shadow:0 0 0 3px rgba(8,127,120,.12);transform:translateY(-1px);}.avatar-chevron{font-size:9px;color:#67827a;}.account-menu{position:absolute;z-index:60;right:0;top:calc(100% + 10px);width:220px;padding:7px;border:1px solid #dce8e2;border-radius:14px;background:#fff;box-shadow:0 14px 35px rgba(20,55,47,.16);}.account-menu[hidden]{display:none;}.account-menu-identity{padding:10px 10px 12px;border-bottom:1px solid #edf2ef;margin-bottom:5px;}.account-menu-identity strong,.account-menu-identity span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.account-menu-identity strong{color:#173a34;font-size:12px;}.account-menu-identity span{margin-top:3px;color:#84958e;font-size:10px;}.account-menu>button{width:100%;padding:10px;border:0;border-radius:8px;background:transparent;color:#526b62;text-align:left;font:600 12px 'IBM Plex Sans',sans-serif;cursor:pointer;}.account-menu>button:hover{background:#f0f7f3;color:#075b58;}.account-menu-rule{height:1px;margin:4px 3px;background:#edf2ef;}.account-menu>button.logout-menu-item{color:#b83d46;}.account-menu>button.logout-menu-item:hover{background:#fff1ef;}
+  .profile-form{display:grid;grid-template-columns:66px minmax(0,1fr);gap:16px;align-items:end;max-width:680px;}.profile-avatar-large{grid-row:span 2;width:58px;height:58px;display:grid;place-items:center;align-self:center;border-radius:19px;background:#dff0e9;color:#08796f;font:700 16px 'Space Grotesk',sans-serif;}.profile-field{min-width:0;}.profile-form>button,.profile-form>.profile-feedback{grid-column:2;justify-self:start;}.profile-form>button{min-width:150px;}.profile-field input{max-width:420px;}
+  @media(max-width:700px){.auth-screen{padding:18px;}.auth-card{padding:27px 23px 22px;border-radius:18px;}.auth-brand{margin-bottom:26px;}.profile-form{grid-template-columns:52px minmax(0,1fr);gap:13px;}.profile-avatar-large{width:48px;height:48px;border-radius:16px;font-size:14px;}}
+  @media(max-width:420px){.auth-card{padding:24px 18px 19px;}.account-menu{right:-8px;width:205px;}}
+  .auth-password-wrap{position:relative;}.auth-password-wrap input{padding-right:74px!important;}.password-toggle{position:absolute;right:7px;top:50%;transform:translateY(-50%);min-width:53px;padding:7px 8px;border:0;border-radius:7px;background:transparent;color:#08796f;font:600 12px 'IBM Plex Sans',sans-serif;cursor:pointer;}.password-toggle:hover{background:#eaf5f0;}.password-toggle:focus-visible{outline:2px solid #168d80;outline-offset:2px;}
+  .workspace-banner{display:flex;align-items:center;gap:13px;margin:0 0 16px;padding:14px 16px;border:1px solid #d7e9df;border-radius:14px;background:linear-gradient(110deg,#f2faf5,#f8fbf9);color:#35584d;box-shadow:0 5px 16px rgba(21,77,58,.035);}.workspace-banner-mark{display:grid;place-items:center;flex:0 0 31px;height:31px;border-radius:10px;background:#dff1e7;color:#08796f;font-weight:800;}.workspace-banner-copy{flex:1;min-width:0;font-size:12px;line-height:1.5;}.workspace-banner-copy strong{display:block;margin-bottom:2px;color:#1b463b;font-size:12px;}.workspace-banner .btn{flex:0 0 auto;white-space:nowrap;}.guest-menu-item[hidden],.account-only-item[hidden]{display:none!important;}.guest-account-panel{display:flex;align-items:flex-start;gap:17px;max-width:730px;padding:20px;border:1px solid #dcebe3;border-radius:16px;background:#f6fbf8;}.guest-account-panel[hidden]{display:none!important;}.guest-account-mark{display:grid;place-items:center;flex:0 0 46px;height:46px;border-radius:15px;background:#dff0e9;color:#08796f;font-weight:800;}.guest-account-panel strong{color:#24463e;}.guest-account-panel p{max-width:570px;margin:7px 0 15px;color:#6b8077;font-size:12px;line-height:1.6;}.profile-form[hidden]{display:none!important;}.auth-screen[hidden]{display:none!important;}
+  @media(max-width:700px){.workspace-banner{align-items:flex-start;flex-wrap:wrap;gap:10px;padding:13px;}.workspace-banner-copy{flex:1 1 calc(100% - 45px);}.workspace-banner .btn{margin-left:41px;}.guest-account-panel{padding:16px;gap:12px;}.guest-account-mark{flex-basis:39px;height:39px;}}
+  @media(max-width:420px){.workspace-banner .btn{width:calc(100% - 41px);margin-left:41px;}}
+  .fictional-data-notice{margin:0 0 15px;padding:12px 15px;border:1px solid #ead9b4;border-radius:12px;background:#fff9eb;color:#765919;font-size:11px;line-height:1.5;}.fictional-data-notice strong{margin-right:5px;color:#664810;}
+  .csv-import-card{margin:0 0 16px;padding:19px 21px;border:1px solid #dce9e3;border-radius:17px;background:linear-gradient(145deg,#fff,#f9fcfa);box-shadow:0 9px 24px rgba(20,69,53,.045);}.csv-import-head{display:flex;align-items:center;justify-content:space-between;gap:14px;}.csv-import-head h2{margin:0;color:#1e4038;font:600 15px 'Space Grotesk',sans-serif;letter-spacing:-.02em;}.csv-import-head p{margin:5px 0 0;color:#75877f;font-size:11px;line-height:1.5;}.csv-import-note{margin-top:12px;padding:9px 11px;border-radius:9px;background:#f2f7f4;color:#74867f;font-size:10px;line-height:1.6;}.csv-import-feedback{margin-top:11px;padding:10px 12px;border-radius:9px;background:#eff8f1;color:#28734b;font-size:11px;line-height:1.5;}.csv-import-feedback.error{background:#fff2f0;color:#a63f34;}.csv-preview{margin-top:16px;}.csv-preview-summary{margin-bottom:10px;color:#31554a;font-size:12px;font-weight:600;}.csv-preview-errors{margin:0 0 11px;padding:10px 12px;border:1px solid #f0dfbb;border-radius:9px;background:#fff9ed;color:#725820;font-size:10px;line-height:1.6;}.csv-preview-table-wrap{max-height:360px;overflow:auto;border:1px solid #e3ece7;border-radius:10px;}.csv-preview-table{width:100%;min-width:810px;border-collapse:collapse;font-size:10px;}.csv-preview-table th,.csv-preview-table td{padding:9px 10px;border-bottom:1px solid #edf2ef;text-align:left;vertical-align:top;}.csv-preview-table th{position:sticky;top:0;background:#f5f9f6;color:#64786f;font-size:9px;text-transform:uppercase;letter-spacing:.055em;z-index:1;}.csv-preview-table tr:last-child td{border-bottom:0;}.csv-preview-table tr.invalid td{background:#fffaf7;}.csv-row-valid{color:#327551;font-weight:600;}.csv-row-invalid{color:#ad4338;font-weight:600;}.csv-preview-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:12px;}.csv-preview-actions .btn{min-height:38px;padding:9px 14px;}.fictional-badge{display:inline-flex;align-items:center;margin:4px 0 0;padding:3px 6px;border:1px solid #ead9b4;border-radius:6px;background:#fff7e6;color:#7a5b1e;font:700 8px 'IBM Plex Sans',sans-serif;letter-spacing:.045em;text-transform:uppercase;}.medicine-meta{display:block;margin-top:3px;color:#82938b;font-size:9px;line-height:1.4;}.stock-meta{display:inline-block;margin-left:5px;color:#36715a;font-size:9px;font-weight:600;}
+  @media(max-width:700px){.csv-import-card{padding:15px;border-radius:14px;}.csv-import-head{align-items:flex-start;}.csv-import-head .btn{padding:9px 11px;white-space:nowrap;}.csv-preview-actions{position:sticky;bottom:0;padding:9px 0 0;background:rgba(255,255,255,.94);}}
+  @media(max-width:420px){.csv-import-head{flex-wrap:wrap;}.csv-import-head>div{flex:1 1 100%;}.csv-import-head .btn{width:100%;}.csv-preview-actions{display:grid;grid-template-columns:1fr 1.4fr;}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<section class="auth-screen" id="authScreen" aria-labelledby="authTitle" hidden>
+  <div class="auth-card" id="authCard">
+    <div class="auth-brand"><span class="auth-brand-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 5v6c0 5.2 3.4 9.9 8 11 4.6-1.1 8-5.8 8-11V5l-8-3Z" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span>MedGuard</span></div>
+    <div class="auth-heading"><p class="eyebrow">YOUR MEDICINE SAFETY WORKSPACE</p><h1 id="authTitle">Welcome back</h1><p id="authSubtitle">Sign in to access your private inventory and alerts.</p></div>
+    <div class="auth-feedback" id="authFeedback" role="status" aria-live="polite" hidden></div>
+    <form id="authForm" class="auth-form">
+      <div class="field" id="authNameField" hidden><label for="authName">Your name</label><input id="authName" name="name" type="text" maxlength="80" autocomplete="name" placeholder="e.g. Anush"></div>
+      <div class="field"><label for="authEmail">Email address</label><input id="authEmail" name="email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"></div>
+      <div class="field"><label for="authPassword">Password</label><div class="auth-password-wrap"><input id="authPassword" name="password" type="password" maxlength="128" autocomplete="current-password" required placeholder="Enter your password"><button class="password-toggle" id="passwordToggle" type="button" aria-controls="authPassword" aria-label="Show password" aria-pressed="false">Show</button></div></div>
+      <button class="btn btn-primary btn-full auth-submit" id="authSubmit" type="submit">Sign in</button>
+    </form>
+    <p class="auth-switch-line"><span id="authSwitchText">New to MedGuard?</span> <button type="button" class="auth-switch" id="authSwitchBtn">Create an account</button></p>
+    <p class="auth-security-note" id="authSecurityNote">Your guest workspace stays in this browser until you create an account and sync it.</p>
+    <button class="btn btn-ghost btn-full" id="continueGuestBtn" type="button">Continue as guest</button>
+  </div>
+</section>
+<div class="app-shell" id="appShell">
+<aside class="sidebar" id="sidebar" aria-label="Main navigation">
+  <div class="sidebar-brand"><span class="sidebar-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 5v6c0 5.2 3.4 9.9 8 11 4.6-1.1 8-5.8 8-11V5l-8-3Z" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span class="sidebar-brand-name">MedGuard</span><button class="collapse-btn" id="collapseSidebar" type="button" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none"><path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+  <div class="nav-caption">WORKSPACE</div>
+  <nav class="side-nav" id="sideNav">
+    <button class="nav-item active" type="button" data-page="dashboard" aria-current="page"><svg viewBox="0 0 24 24" fill="none"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><span>Dashboard</span></button>
+    <button class="nav-item" type="button" data-page="inventory"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5M12 13v8" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><span>Inventory</span></button>
+    <button class="nav-item" type="button" data-page="temperature"><svg viewBox="0 0 24 24" fill="none"><path d="M14 14.8V5a3 3 0 0 0-6 0v9.8a5 5 0 1 0 6 0Z" stroke="currentColor" stroke-width="1.7"/><path d="M11 11v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="11" cy="18" r="1.5" fill="currentColor"/></svg><span>Temperature Monitoring</span></button>
+    <button class="nav-item" type="button" data-page="alerts"><svg viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Alerts</span><span class="nav-count" id="navAlertCount" hidden>0</span></button>
+    <button class="nav-item" type="button" data-page="reports"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="m7 15 4-4 3 2 6-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Reports</span></button>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="nav-item" type="button" data-page="account"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.7"/><path d="M4 21a8 8 0 0 1 16 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Account</span></button>
+    <button class="nav-item" type="button" data-page="settings"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" stroke="currentColor" stroke-width="1.7"/><path d="M19 13.5a7 7 0 0 0 0-3l2-1.5-2-3.5-2.5 1a7 7 0 0 0-2.5-1.5L13.5 2h-4L9 5a7 7 0 0 0-2.5 1.5L4 5.5 2 9l2 1.5a7 7 0 0 0 0 3L2 15l2 3.5 2.5-1A7 7 0 0 0 9 19l.5 3h4l.5-3a7 7 0 0 0 2.5-1.5l2.5 1 2-3.5-2-1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>Settings</span></button>
+    <div class="sidebar-footnote">Medicine safety, at a glance</div>
+  </div>
+</aside>
+<button class="sidebar-scrim" id="sidebarScrim" type="button" aria-label="Close navigation"></button>
+<main class="main-shell"><div class="wrap">
 
   <header class="top">
     <div class="brand">
@@ -248,32 +605,47 @@
         <p>Expiry detection ledger &mdash; scan, parse, and flag before it's too late</p>
       </div>
     </div>
-    <div class="top-actions">
-      <div class="thresh">
-        <span>Alert window</span>
-        <input type="number" id="thresholdInput" min="1" max="365" value="90">
-        <span>days</span>
-      </div>
-    </div>
+    <div class="top-actions"><button class="mobile-menu-btn" id="mobileMenuBtn" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><div class="page-context"><span class="eyebrow" id="currentDate">MEDGUARD WORKSPACE</span><strong id="pageTitle">Dashboard</strong></div><div class="header-tools"><span class="sync-label" id="syncLabel">Sync status unavailable</span><button class="notification-btn" type="button" data-page="alerts" aria-label="View alerts" title="View alerts"><svg viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="headerAlertDot" hidden></span></button><div class="account-menu-wrap"><button class="user-avatar" id="accountMenuBtn" type="button" aria-label="Open account menu" aria-haspopup="true" aria-expanded="false"><span id="userInitials">MG</span><span class="avatar-chevron" aria-hidden="true">&#9662;</span></button><div class="account-menu" id="accountMenu" role="menu" hidden><div class="account-menu-identity"><strong id="menuUserName">Guest workspace</strong><span id="menuUserEmail">Stored in this browser</span></div><button type="button" role="menuitem" class="guest-menu-item" id="menuSyncBtn">Create account to sync</button><button type="button" role="menuitem" class="guest-menu-item" id="menuSignInBtn">Sign in</button><button type="button" role="menuitem" data-go="account" class="account-only-item" hidden>Profile</button><button type="button" role="menuitem" data-go="settings" class="account-only-item" hidden>Settings</button><div class="account-menu-rule account-only-item" hidden></div><button type="button" role="menuitem" class="logout-menu-item account-only-item" id="logoutBtn" hidden>Log out</button></div></div></div></div>
   </header>
 
-  <section class="stat-strip">
-    <div class="stat expired"><div class="n" id="statExpired">0</div><div class="l">Expired</div></div>
-    <div class="stat near"><div class="n" id="statNear">0</div><div class="l">Near expiry</div></div>
-    <div class="stat valid"><div class="n" id="statValid">0</div><div class="l">Valid</div></div>
-    <div class="stat total"><div class="n" id="statTotal">0</div><div class="l">Total tracked</div></div>
+  <div class="connection-status" id="connectionStatus" role="status" aria-live="polite">
+    <span id="connectionMessage"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:7px;"></span>Connecting to MedGuard...</span>
+    <button class="btn btn-ghost" id="retryBtn" type="button" hidden>Retry</button>
+  </div>
+
+  <section class="workspace-banner" id="workspaceBanner" role="status" aria-live="polite" hidden><div class="workspace-banner-mark" aria-hidden="true">i</div><div class="workspace-banner-copy" id="workspaceBannerCopy"></div><button class="btn btn-primary" id="syncWorkspaceBtn" type="button">Create account to sync</button></section>
+
+  <div class="fictional-data-notice" id="fictionalDataNotice" role="status" aria-live="polite" hidden><strong>Fictional test data is included in this inventory.</strong> These records are for testing only and do not represent real stock.</div>
+
+  <section class="dashboard-hero" data-view="dashboard">
+    <div class="hero-copy"><div class="hero-eyebrow">YOUR MEDICINE SAFETY OVERVIEW</div><h2>A healthier inventory starts here.</h2><p>Everything is in one place. Here's what needs your attention today.</p></div>
+    <button class="hero-action" type="button" id="scanMedicineBtn" data-go="scan"><span>+</span> Scan medicine</button>
+    <div class="hero-orbit hero-orbit-one"></div><div class="hero-orbit hero-orbit-two"></div>
+  </section>
+
+  <section class="stat-strip dashboard-stats" data-view="dashboard">
+    <div class="stat total"><div class="metric-top"><span>Total medicines</span><span class="metric-icon teal-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v14H4zM8 3h8v3M8 10h8M8 14h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><div class="n" id="statTotal">0</div><div class="metric-foot" id="statTotalNote">Across your inventory</div></div>
+    <div class="stat near"><div class="metric-top"><span>Expiring soon</span><span class="metric-icon amber-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span></div><div class="n" id="statNear">0</div><div class="metric-foot" id="statNearNote">Within your alert window</div></div>
+    <div class="stat expired"><div class="metric-top"><span>Expired items</span><span class="metric-icon red-icon"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 10 18H2L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9v5m0 3h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="n" id="statExpired">0</div><div class="metric-foot" id="statExpiredNote">Needs attention in inventory</div></div>
+    <div class="stat storage-stat"><div class="metric-top"><span>Storage health</span><span class="metric-icon blue-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M14 14.8V5a3 3 0 0 0-6 0v9.8a5 5 0 1 0 6 0Z" stroke="currentColor" stroke-width="1.6"/><path d="M11 11v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span></div><div class="n" id="statValid">--</div><div class="metric-foot" id="storageHealthNote">No temperature data recorded</div></div>
+  </section>
+
+  <section class="dashboard-grid" data-view="dashboard">
+    <article class="dashboard-card expiry-card"><div class="dashboard-card-head"><div><h2>Expiry overview</h2><p>Inventory status based on recorded expiry dates</p></div><button type="button" class="text-link" data-page="inventory">View inventory <span aria-hidden="true">&rarr;</span></button></div><div id="expiryChart" class="expiry-chart"></div><div id="expiryChartEmpty" class="dashboard-empty" hidden>No medicines to chart yet. Add or scan a medicine to see expiry trends.</div></article>
+    <article class="dashboard-card alerts-card"><div class="dashboard-card-head"><div><h2>Needs attention</h2><p id="dashboardAlertSummary">Alerts from your current inventory</p></div><button type="button" class="text-link" data-page="alerts">All alerts <span aria-hidden="true">&rarr;</span></button></div><div id="dashboardAlerts" class="dashboard-alert-list"></div></article>
+    <article class="dashboard-card inventory-preview-card"><div class="dashboard-card-head"><div><h2>Inventory snapshot</h2><p id="dashboardInventoryNote">Your next-expiring medicines</p></div><button type="button" class="text-link" data-page="inventory">View all <span aria-hidden="true">&rarr;</span></button></div><div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Medicine</th><th>Batch</th><th>Expiry date</th><th>Status</th></tr></thead><tbody id="dashboardInventory"></tbody></table></div><div class="dashboard-empty" id="dashboardInventoryEmpty" hidden>No medicines have been added. Scan a package or enter one manually to start your inventory.</div></article>
   </section>
 
   <!-- SCAN PANEL -->
-  <section class="panel">
+  <section class="panel scan-panel" id="scanPanel" data-view="scan">
     <div class="panel-head">
       <div>
-        <h2>Scan a package</h2>
+        <h2><svg class="scan-heading-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg><span>Scan a package</span></h2>
         <div class="sub">Photograph the expiry print, or enter details by hand</div>
       </div>
       <div class="mode-toggle">
-        <button id="modeScanBtn" class="active">Scan photo</button>
-        <button id="modeManualBtn">Enter manually</button>
+        <button id="modeScanBtn" class="active" type="button" aria-pressed="true">Scan photo</button>
+        <button id="modeManualBtn" type="button" aria-pressed="false">Enter manually</button>
       </div>
     </div>
     <div class="panel-body">
@@ -296,7 +668,7 @@
 
           <div class="field name">
             <label>Medicine name</label>
-            <input type="text" id="fName" placeholder="e.g. Amoxicillin 500mg">
+            <input type="text" id="fName" placeholder="e.g. Amoxicillin 500mg" maxlength="200" required>
           </div>
           <div class="row2">
             <div class="field">
@@ -310,16 +682,43 @@
           </div>
           <div class="field">
             <label>Expiry date <span style="color:var(--red);">*</span></label>
-            <input type="date" id="fExp">
+            <input type="date" id="fExp" required>
           </div>
-          <button class="btn btn-primary btn-full" id="addBtn">Add to inventory</button>
+          <div class="field temp-sensitive-field">
+            <label><input type="checkbox" id="fTempSensitive"> Temperature-sensitive medicine</label>
+          </div>
+          <div class="row2 temp-controls" id="tempControls">
+            <div class="field"><label>Minimum storage (°C)</label><input type="number" id="fTempMin" step="0.1" placeholder="e.g. 2"></div>
+            <div class="field"><label>Maximum storage (°C)</label><input type="number" id="fTempMax" step="0.1" placeholder="e.g. 8"></div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-full" id="addBtn" type="button">Add to inventory</button>
+            <button class="btn btn-ghost btn-full" id="cancelEditBtn" type="button" hidden>Cancel edit</button>
+          </div>
+          <div class="form-feedback" id="formFeedback" role="status" aria-live="polite" hidden></div>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- TEMPERATURE MONITORING -->
+  <section class="panel" data-view="temperature">
+    <div class="panel-head">
+      <div><h2>Temperature monitoring</h2><div class="sub">Manually log storage readings against each medicine's labeled range</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="row2">
+        <div class="field"><label>Temperature-sensitive medicine</label><select id="temperatureMedicine"><option value="">Add a temperature-sensitive medicine first</option></select></div>
+        <div class="field"><label>Current temperature (°C)</label><input type="number" id="temperatureValue" step="0.1" placeholder="e.g. 5.2"></div>
+      </div>
+      <div class="field"><label>Note (optional)</label><input type="text" id="temperatureNote" maxlength="500" placeholder="e.g. Morning refrigerator check"></div>
+      <button class="btn btn-primary" id="logTemperatureBtn">Log temperature</button>
+      <div class="temp-readings" id="temperatureReadings"><div class="empty-note">No temperature readings logged yet.</div></div>
+    </div>
+  </section>
+
   <!-- ALERTS -->
-  <section class="panel">
+  <section class="panel" data-view="alerts">
     <div class="panel-head">
       <div>
         <h2>Active alerts</h2>
@@ -332,7 +731,26 @@
   </section>
 
   <!-- LEDGER -->
-  <section class="panel">
+  <section class="panel" data-view="inventory">
+    <div class="csv-import-card" id="csvImportCard">
+      <div class="csv-import-head"><div><h2>Import medicine inventory</h2><p>Upload a CSV, review each row and its validation, then import the valid fictional test records.</p></div><button class="btn btn-primary" id="chooseCsvBtn" type="button">Upload CSV</button><input id="inventoryCsvFile" type="file" accept=".csv,text/csv" hidden></div>
+      <div class="csv-import-note">Required columns: Medicine Name, Generic Name, Strength, Form, Category, Batch Number, Manufacture Date, Expiry Date, Quantity, Unit, Reorder Level, Supplier, Storage Location, Barcode, Data Status. Imported rows must be marked fictional, test, or sample data.</div>
+      <div class="csv-import-feedback" id="csvImportFeedback" role="status" aria-live="polite" hidden></div>
+      <div class="csv-preview" id="csvPreview" hidden>
+        <div class="csv-preview-summary" id="csvPreviewSummary"></div>
+        <div class="csv-preview-errors" id="csvPreviewErrors" hidden></div>
+        <div class="csv-preview-table-wrap"><table class="csv-preview-table"><thead><tr><th>Row</th><th>Medicine</th><th>Batch</th><th>Manufacture</th><th>Expiry</th><th>Qty</th><th>Category</th><th>Data status</th><th>Review</th></tr></thead><tbody id="csvPreviewBody"></tbody></table></div>
+        <div class="csv-preview-actions"><button class="btn btn-ghost" type="button" id="cancelCsvBtn">Cancel</button><button class="btn btn-primary" type="button" id="importCsvBtn" disabled>Import valid records</button></div>
+      </div>
+    </div>
+    <div class="inventory-chart-card">
+      <div class="inventory-chart-head"><div><h2>Medicines by expiry status</h2><p>Current inventory grouped by expiry date and your alert window.</p></div><span class="chart-unit">MEDICINE COUNT</span></div>
+      <div class="inventory-chart-content" id="inventoryChartContent" aria-live="polite">
+        <div class="inventory-donut" id="inventoryDonut" role="img" aria-label="Expiry status distribution"><div class="inventory-donut-center"><strong id="inventoryChartTotal">0</strong><span>medicines</span></div></div>
+        <div class="inventory-legend" id="inventoryLegend"></div>
+      </div>
+      <div class="inventory-chart-empty" id="inventoryChartEmpty" hidden></div>
+    </div>
     <div class="panel-head">
       <div>
         <h2>Inventory ledger</h2>
@@ -358,44 +776,258 @@
     </div>
   </section>
 
-  <footer>Dates parsed on-device via optical character recognition â€” always confirm against the physical package before dispensing or discarding.</footer>
+  <section class="panel workspace-page" data-view="reports"><div class="panel-head"><div><h2>Reports</h2><div class="sub">A snapshot of the medicines currently tracked in your inventory.</div></div></div><div class="panel-body"><div id="reportContent"></div><div class="report-empty" id="reportEmpty" hidden><div class="empty-icon">R</div><strong>No inventory to report yet</strong><p>Add or scan a medicine to see expiry and temperature summaries here.</p><button class="btn btn-primary" type="button" data-go="dashboard">Add a medicine</button></div></div></section>
+<section class="panel workspace-page" data-view="settings"><div class="panel-head"><div><h2>Settings</h2><div class="sub">Configure when MedGuard flags medicines as nearing expiry.</div></div></div><div class="panel-body settings-body"><div class="settings-card"><div class="settings-icon">!</div><div class="settings-copy"><strong>Expiry alert window</strong><p>Show medicines in the alerts list when expiry is within this many days.</p></div><div class="thresh settings-thresh"><span>Alert window</span><input type="number" id="thresholdInput" min="1" max="365" value="90"><span>days</span></div></div><div class="settings-card"><div class="settings-icon connection-icon">&#9679;</div><div class="settings-copy"><strong>Backend connection</strong><p id="settingsConnection">Connection status appears here while the API is loading.</p></div><button class="btn btn-ghost" type="button" id="settingsRetryBtn">Retry connection</button></div></div></section>
+<section class="panel workspace-page" data-view="account"><div class="panel-head"><div><h2>Account profile</h2><div class="sub">Manage your private MedGuard workspace.</div></div></div><div class="panel-body"><div class="guest-account-panel" id="guestAccountPanel"><div class="guest-account-mark">G</div><div><strong>You are using a guest workspace</strong><p>Your medicines and settings are stored only in this browser. Create an account or sign in to back them up and sync across devices.</p><button class="btn btn-primary" type="button" id="accountSyncBtn">Create account to sync</button></div></div><form class="profile-form" id="profileForm" hidden><div class="profile-avatar-large" id="profileInitials">MG</div><div class="profile-field"><label for="profileName">Display name</label><input id="profileName" name="name" type="text" maxlength="80" required></div><div class="profile-field"><label for="profileEmail">Email address</label><input id="profileEmail" name="email" type="email" readonly></div><button class="btn btn-primary" type="submit" id="saveProfileBtn">Save profile</button><div class="profile-feedback" id="profileFeedback" role="status" aria-live="polite" hidden></div></form></div></section>
+<footer>Dates parsed on-device via optical character recognition â€” always confirm against the physical package before dispensing or discarding.</footer>
+</div>
+</main>
 </div>
 
 <script>
 (function(){
   "use strict";
 
-  /* ================= Storage helpers ================= */
-  const STORE_KEY = "medguard:inventory";
-  const SETTINGS_KEY = "medguard:settings";
-
-  async function loadInventory(){
+  /* ================= API storage ================= */
+  const configuredApiBase = document.querySelector('meta[name="medguard-api-base"]')?.content.trim()
+    || new URLSearchParams(location.search).get("api")?.trim();
+  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  const defaultApiBase = location.protocol === "file:"
+    ? "http://localhost:8000"
+    : location.port === "8000"
+      ? location.origin
+      : localHost
+        ? `${location.protocol}//${location.hostname}:8000`
+        : location.origin;
+  const API_BASE = (configuredApiBase || defaultApiBase).replace(/\/$/, "");
+  const connectionStatus = document.getElementById("connectionStatus");
+  const connectionMessage = document.getElementById("connectionMessage");
+  const retryBtn = document.getElementById("retryBtn");
+  const loadState = {inventory:"loading", readings:"loading"};
+  let loadErrors = {};
+  async function api(path, options={}){
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let response;
     try{
-      const r = await window.storage.get(STORE_KEY, false);
-      return r && r.value ? JSON.parse(r.value) : [];
-    }catch(e){ return []; }
+      response = await fetch(API_BASE + path, {
+        ...options,
+        credentials:"include",
+        headers:{...(options.body != null && !(options.body instanceof FormData) ? {"Content-Type":"application/json"} : {}),...(options.headers||{})},
+        signal:options.signal || controller.signal
+      });
+    }catch(error){
+      if(error.name === "AbortError") throw new Error(`The request to ${API_BASE} timed out. Check that the backend is running.`);
+      throw new Error(`Can't reach ${API_BASE}. Start the backend and check that this page's origin is allowed by CORS.`);
+    }finally{ clearTimeout(timeout); }
+    if(response.status===401 && !["/api/auth/login","/api/auth/signup","/api/auth/logout"].includes(path)){
+      // Remove an invalid/expired HttpOnly cookie; it cannot be cleared from JS storage.
+      try{await fetch(API_BASE+"/api/auth/logout",{method:"POST",credentials:"include"});}catch(e){}
+      if(path!=="/api/auth/me") showAuthScreen("Your session has expired. Please sign in again.");
+    }
+    if(!response.ok){
+      let detail = "Request failed (" + response.status + ")";
+      try{ const body = await response.json(); detail = body.detail || detail; }catch(e){}
+      const error=new Error(detail);
+      error.status=response.status;
+      throw error;
+    }
+    if(response.status === 204) return null;
+    return response.json();
   }
-  async function saveInventory(list){
-    try{ await window.storage.set(STORE_KEY, JSON.stringify(list), false); }
-    catch(e){ console.error("save failed", e); }
-  }
-  async function loadSettings(){
-    try{
-      const r = await window.storage.get(SETTINGS_KEY, false);
-      return r && r.value ? JSON.parse(r.value) : {thresholdDays:90};
-    }catch(e){ return {thresholdDays:90}; }
-  }
-  async function saveSettings(s){
-    try{ await window.storage.set(SETTINGS_KEY, JSON.stringify(s), false); }
-    catch(e){ console.error("save settings failed", e); }
-  }
+  async function loadInventory(){ return api("/api/medicines"); }
+  async function loadSettings(){ return api("/api/settings"); }
+  async function saveSettings(settings){ return api("/api/settings", {method:"PUT", body:JSON.stringify(settings)}); }
+  async function loadTemperatureReadings(){ return api("/api/temperature-readings"); }
 
   /* ================= State ================= */
   let inventory = [];
+  let temperatureReadings = [];
   let thresholdDays = 90;
   let currentFilter = "all";
   let searchTerm = "";
   let pendingImageDataUrl = null;
+  let currentUser = null;
+  let authMode = "login";
+  let isGuest = true;
+  let editingMedicineId = null;
+  let guestWorkspace = {medicines:[],readings:[],thresholdDays:90,thresholdTouched:false};
+  let authReturnPage = "dashboard";
+  let workspaceMessage = "";
+  let csvPreviewRows = [];
+  let csvImportDigest = "";
+  const GUEST_STORAGE_KEY = "medguard.guest-workspace.v1";
+
+  function createGuestId(){
+    return "g_"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));
+  }
+  function readGuestWorkspace(){
+    const saved=localStorage.getItem(GUEST_STORAGE_KEY);
+    if(!saved)return {medicines:[],readings:[],thresholdDays:90,thresholdTouched:false};
+    const parsed=JSON.parse(saved);
+    return {medicines:Array.isArray(parsed.medicines)?parsed.medicines:[],readings:Array.isArray(parsed.readings)?parsed.readings:[],thresholdDays:Number(parsed.thresholdDays)||90,thresholdTouched:parsed.thresholdTouched===true};
+  }
+  function persistGuestWorkspace(){
+    guestWorkspace.medicines=inventory;
+    guestWorkspace.readings=temperatureReadings;
+    guestWorkspace.thresholdDays=thresholdDays;
+    localStorage.setItem(GUEST_STORAGE_KEY,JSON.stringify(guestWorkspace));
+    updateWorkspaceChrome();
+  }
+  function hasGuestData(){return guestWorkspace.medicines.length>0||guestWorkspace.readings.length>0||guestWorkspace.thresholdTouched;}
+  function updateWorkspaceChrome(){
+    const initials=document.getElementById("userInitials");
+    const menuName=document.getElementById("menuUserName");
+    const menuEmail=document.getElementById("menuUserEmail");
+    initials.textContent=isGuest?"G":(currentUser?.name.trim().split(/\s+/).map(part=>part[0]).join("").slice(0,2).toUpperCase()||"MG");
+    document.getElementById("accountMenuBtn").setAttribute("aria-label",isGuest?"Guest workspace options":"Open account menu");
+    menuName.textContent=isGuest?"Guest workspace":(currentUser?.name||"MedGuard account");
+    menuEmail.textContent=isGuest?"Stored in this browser":(currentUser?.email||"");
+    document.querySelectorAll(".guest-menu-item").forEach(button=>button.hidden=!isGuest);
+    document.querySelectorAll(".account-only-item").forEach(button=>button.hidden=isGuest);
+    document.getElementById("profileForm").hidden=isGuest;
+    document.getElementById("guestAccountPanel").hidden=!isGuest;
+    const banner=document.getElementById("workspaceBanner");
+    const copy=document.getElementById("workspaceBannerCopy");
+    const syncButton=document.getElementById("syncWorkspaceBtn");
+    const pending=hasGuestData();
+    banner.hidden=!isGuest&&!pending;
+    if(isGuest){
+      const storageWarning=workspaceMessage?" "+escapeHtml(workspaceMessage):"";
+      copy.innerHTML='<strong>Guest workspace - stored only in this browser</strong>Your medicines and settings stay on this device until you create an account and sync them.'+storageWarning;
+      syncButton.textContent="Create account to sync";
+    }else if(pending){
+      copy.innerHTML='<strong>Guest data has not been backed up</strong>'+escapeHtml(workspaceMessage||("This browser still has "+guestWorkspace.medicines.length+" guest medicines and related settings. Sync them to your account."));
+      syncButton.textContent="Sync guest data";
+    }
+    const syncLabel=document.getElementById("syncLabel");
+    if(syncLabel&&isGuest)syncLabel.textContent="Local-only - this browser";
+    const settingsConnection=document.getElementById("settingsConnection");
+    if(settingsConnection&&isGuest)settingsConnection.textContent="Guest mode: medicines and settings are stored only in this browser. Create an account and sync to back them up.";
+  }
+  function enterGuestWorkspace(page){
+    currentUser=null;
+    isGuest=true;
+    try{guestWorkspace=readGuestWorkspace();}catch(error){workspaceMessage="Browser storage is unavailable; guest changes may not survive closing this tab.";}
+    inventory=guestWorkspace.medicines;
+    temperatureReadings=guestWorkspace.readings;
+    thresholdDays=guestWorkspace.thresholdDays;
+    thresholdInput.value=thresholdDays;
+    loadErrors={};
+    loadState.inventory="loaded";
+    loadState.readings="loaded";
+    document.getElementById("authScreen").hidden=true;
+    document.getElementById("appShell").hidden=false;
+    connectionStatus.hidden=true;
+    setPage(page||"dashboard",false);
+    updateWorkspaceChrome();
+    renderAll();
+  }
+  function openAccountAccess(){
+    authReturnPage=location.hash.slice(1)||"dashboard";
+    authMode="login";
+    document.getElementById("appShell").hidden=true;
+    document.getElementById("authScreen").hidden=false;
+    renderAuthMode();
+    document.getElementById("authEmail").focus();
+  }
+  function announceGuestSync(){
+    connectionStatus.classList.remove("error");
+    connectionMessage.textContent="Guest medicines and settings were synced to this account.";
+    retryBtn.hidden=true;
+    connectionStatus.hidden=false;
+    setTimeout(()=>{connectionStatus.hidden=true;},5000);
+  }
+  async function syncGuestWorkspace(){
+    if(!currentUser||!hasGuestData())return true;
+    const snapshot=JSON.stringify(guestWorkspace);
+    workspaceMessage="";
+    updateWorkspaceChrome();
+    try{
+      const payload={
+        medicines:guestWorkspace.medicines.map(item=>({guest_id:item.guest_id||item.id,name:item.name,batch:item.batch||null,mfg:item.mfg||null,exp:item.exp,temp_sensitive:!!item.temp_sensitive,temp_min:item.temp_min??null,temp_max:item.temp_max??null,generic_name:item.generic_name||null,strength:item.strength||null,form:item.form||null,category:item.category||null,quantity:Number(item.quantity)||0,unit:item.unit||null,reorder_level:Number(item.reorder_level)||0,supplier:item.supplier||null,storage_location:item.storage_location||null,barcode:item.barcode||null,data_status:item.data_status||null,import_key:item.import_key||null})),
+        readings:guestWorkspace.readings.map(item=>({guest_id:item.guest_id||item.id,medicine_guest_id:item.medicine_id,temp_c:Number(item.temp_c),recorded_at:item.recorded_at,note:item.note||null})),
+        thresholdDays:guestWorkspace.thresholdTouched?guestWorkspace.thresholdDays:null
+      };
+      await api("/api/guest-sync",{method:"POST",body:JSON.stringify(payload)});
+      if(JSON.stringify(guestWorkspace)!==snapshot){
+        workspaceMessage="Some guest data changed during sync. Sync again to back up the latest changes.";
+        updateWorkspaceChrome();
+        return false;
+      }
+      localStorage.removeItem(GUEST_STORAGE_KEY);
+      guestWorkspace={medicines:[],readings:[],thresholdDays:90,thresholdTouched:false};
+      inventory=[];
+      temperatureReadings=[];
+      workspaceMessage="";
+      updateWorkspaceChrome();
+      return true;
+    }catch(error){
+      workspaceMessage="Sync could not finish: "+(error.message||"check your connection and try again");
+      updateWorkspaceChrome();
+      return false;
+    }
+  }
+
+  const CSV_REQUIRED_HEADERS=["Medicine Name","Generic Name","Strength","Form","Category","Batch Number","Manufacture Date","Expiry Date","Quantity","Unit","Reorder Level","Supplier","Storage Location","Barcode","Data Status"];
+  const CSV_FIELD_MAP={"medicine name":"name","generic name":"generic_name","strength":"strength","form":"form","category":"category","batch number":"batch","manufacture date":"mfg","expiry date":"exp","quantity":"quantity","unit":"unit","reorder level":"reorder_level","supplier":"supplier","storage location":"storage_location","barcode":"barcode","data status":"data_status"};
+  function parseCSVText(text){
+    const rows=[];let row=[];let value="";let quoted=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(quoted){if(ch==='"'&&text[i+1]==='"'){value+='"';i++;}else if(ch==='"')quoted=false;else value+=ch;}
+      else if(ch==='"'){if(value.length)throw new Error("Unexpected quote in CSV. Check quoting around fields.");quoted=true;}
+      else if(ch===","){row.push(value);value="";}
+      else if(ch==="\n"||ch==="\r"){if(ch==="\r"&&text[i+1]==="\n")i++;row.push(value);value="";if(row.some(cell=>String(cell).trim()!==""))rows.push(row);row=[];}
+      else value+=ch;
+    }
+    if(quoted)throw new Error("A quoted field was not closed. Check the CSV file and try again.");
+    row.push(value);if(row.some(cell=>String(cell).trim()!==""))rows.push(row);return rows;
+  }
+  function parseCSVDate(raw,label,required){
+    const value=String(raw||"").trim();if(!value)return required?{value:null,error:label+" is required"}:{value:null,error:null};
+    let year,month,day,match=value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(match){year=Number(match[1]);month=Number(match[2]);day=Number(match[3]);}
+    else{match=value.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);if(!match)return {value:null,error:label+" must use YYYY-MM-DD or an unambiguous M/D/YYYY or D/M/YYYY date"};const a=Number(match[1]),b=Number(match[2]);year=Number(match[3]);if(a<=12&&b<=12)return {value:null,error:label+" is ambiguous; use YYYY-MM-DD"};if(a>12){day=a;month=b;}else{month=a;day=b;}}
+    const parsed=new Date(Date.UTC(year,month-1,day));if(parsed.getUTCFullYear()!==year||parsed.getUTCMonth()!==month-1||parsed.getUTCDate()!==day)return {value:null,error:label+" is not a valid calendar date"};return {value:parsed.toISOString().slice(0,10),error:null};
+  }
+  function parseCSVInteger(raw,label){const source=String(raw??"").trim();if(!/^\d+$/.test(source)&&!/^\d{1,3}(,\d{3})+$/.test(source))return {value:null,error:label+" must be a whole number of zero or more"};const number=Number(source.replace(/,/g,""));if(!Number.isSafeInteger(number)||number>2147483647)return {value:null,error:label+" is outside the supported range"};return {value:number,error:null};}
+  async function stableCSVHash(file){const bytes=await file.arrayBuffer();if(globalThis.crypto?.subtle){const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));return Array.from(digest,byte=>byte.toString(16).padStart(2,"0")).join("");}let a=2166136261,b=2246822519;for(const byte of new Uint8Array(bytes)){a=Math.imul(a^byte,16777619)>>>0;b=Math.imul(b^byte,3266489917)>>>0;}return a.toString(16).padStart(8,"0")+b.toString(16).padStart(8,"0");}
+  function renderCSVPreview(){
+    const valid=csvPreviewRows.filter(item=>!item.errors.length).length,invalid=csvPreviewRows.length-valid;
+    document.getElementById("csvPreviewSummary").textContent=csvPreviewRows.length+" records found ? "+valid+" ready to import ? "+invalid+" need attention";
+    document.getElementById("csvPreviewBody").innerHTML=csvPreviewRows.map(item=>{const m=item.medicine;const note=item.errors.length?item.errors.join("; "):"Ready";return '<tr class="'+(item.errors.length?"invalid":"")+'"><td>'+item.row+'</td><td>'+escapeHtml(m.name||"?")+(m.generic_name?'<span class="medicine-meta">'+escapeHtml(m.generic_name)+(m.strength?' ? '+escapeHtml(m.strength):'')+'</span>':'')+'</td><td>'+escapeHtml(m.batch||"?")+'</td><td>'+escapeHtml(m.mfg||"?")+'</td><td>'+escapeHtml(m.exp||"?")+'</td><td>'+escapeHtml(m.quantity==null?"?":String(m.quantity)+(m.unit?' '+m.unit:''))+'</td><td>'+escapeHtml(m.category||"?")+'</td><td>'+escapeHtml(m.data_status||"?")+'</td><td class="'+(item.errors.length?"csv-row-invalid":"csv-row-valid")+'">'+escapeHtml(note)+'</td></tr>';}).join("");
+    const messages=[];csvPreviewRows.filter(item=>item.errors.length).slice(0,25).forEach(item=>messages.push("Row "+item.row+": "+item.errors.join("; ")));if(invalid>25)messages.push("And "+(invalid-25)+" more rows with validation errors.");
+    const errors=document.getElementById("csvPreviewErrors");errors.innerHTML=messages.map(message=>'<div>'+escapeHtml(message)+'</div>').join("");errors.hidden=!messages.length;
+    const button=document.getElementById("importCsvBtn");button.disabled=valid===0;button.textContent=valid?"Import "+valid+" valid record"+(valid===1?"":"s"):"No valid records to import";document.getElementById("csvPreview").hidden=false;
+  }
+  async function previewCSVFile(file){
+    const feedback=document.getElementById("csvImportFeedback");feedback.hidden=true;feedback.className="csv-import-feedback";csvPreviewRows=[];csvImportDigest="";if(!file)return;
+    if(!file.name.toLowerCase().endsWith(".csv")){showCSVFeedback("Choose a .csv file.",true);return;}if(file.size>10*1024*1024){showCSVFeedback("This CSV is larger than the 10 MB import limit.",true);return;}
+    try{
+      const rows=parseCSVText((await file.text()).replace(/^\uFEFF/,""));if(rows.length<2)throw new Error("This CSV has a header but no inventory rows to preview.");if(rows.length>5001)throw new Error("This CSV has more than 5000 data rows. Split it into smaller files and try again.");
+      const headers=rows[0].map(header=>String(header).trim().toLowerCase()),duplicates=headers.filter((header,index)=>headers.indexOf(header)!==index),missing=CSV_REQUIRED_HEADERS.filter(header=>!headers.includes(header.toLowerCase()));if(duplicates.length)throw new Error("Duplicate CSV header: "+duplicates[0]);if(missing.length)throw new Error("Missing required CSV columns: "+missing.join(", "));
+      csvImportDigest=await stableCSVHash(file);
+      const indexByHeader=new Map(headers.map((header,index)=>[header,index]));
+      csvPreviewRows=rows.slice(1).map((cells,index)=>{
+        const errors=[];if(cells.length!==headers.length)errors.push("Expected "+headers.length+" columns but found "+cells.length);const get=header=>String(cells[indexByHeader.get(header)]??"").trim();const medicine={};Object.entries(CSV_FIELD_MAP).forEach(([header,field])=>medicine[field]=get(header));
+        const mfg=parseCSVDate(medicine.mfg,"Manufacture date",false),exp=parseCSVDate(medicine.exp,"Expiry date",true);medicine.mfg=mfg.value;medicine.exp=exp.value;if(mfg.error)errors.push(mfg.error);if(exp.error)errors.push(exp.error);if(!medicine.name)errors.push("Medicine name is required");
+        const quantity=parseCSVInteger(medicine.quantity,"Quantity"),reorder=parseCSVInteger(medicine.reorder_level,"Reorder level");medicine.quantity=quantity.value;medicine.reorder_level=reorder.value;if(quantity.error)errors.push(quantity.error);if(reorder.error)errors.push(reorder.error);if(medicine.quantity>0&&!medicine.unit)errors.push("Unit is required when quantity is greater than zero");if(mfg.value&&exp.value&&mfg.value>exp.value)errors.push("Expiry date is before manufacture date");if(!isFictionalStatus(medicine.data_status))errors.push("Data Status must clearly mark this row as fictional, test, or sample data");
+        medicine.import_key=csvImportDigest+":"+(index+2);return {row:index+2,medicine,errors};
+      });renderCSVPreview();
+    }catch(error){document.getElementById("csvPreview").hidden=true;showCSVFeedback(error.message||"Could not read this CSV file.",true);}
+  }
+  function showCSVFeedback(message,isError){const feedback=document.getElementById("csvImportFeedback");feedback.textContent=message;feedback.className="csv-import-feedback"+(isError?" error":"");feedback.hidden=false;}
+  function cancelCSVPreview(){csvPreviewRows=[];csvImportDigest="";document.getElementById("csvPreview").hidden=true;document.getElementById("csvPreviewBody").innerHTML="";document.getElementById("inventoryCsvFile").value="";document.getElementById("csvImportFeedback").hidden=true;}
+  async function importCSVRecords(){
+    const rows=csvPreviewRows.filter(item=>!item.errors.length);if(!rows.length)return;const button=document.getElementById("importCsvBtn");button.disabled=true;button.textContent="Importing...";
+    try{
+      let imported=0,duplicates=0;const payload=rows.map(({medicine})=>({...medicine,temp_sensitive:false,temp_min:null,temp_max:null}));
+      if(isGuest){const oldInventory=inventory;const seen=new Set(inventory.map(item=>item.import_key).filter(Boolean));const additions=[];payload.forEach(item=>{if(seen.has(item.import_key)){duplicates++;return;}seen.add(item.import_key);const guestId="g_import_"+item.import_key;additions.push({...item,id:guestId,guest_id:guestId,added_at:new Date().toISOString()});});inventory=[...additions,...inventory];try{persistGuestWorkspace();}catch(error){inventory=oldInventory;guestWorkspace.medicines=oldInventory;throw new Error("Could not save imported records in this browser. Check available site storage and retry.");}imported=additions.length;}
+      else{const result=await api("/api/medicines/import",{method:"POST",body:JSON.stringify({medicines:payload})});imported=result.imported;duplicates=result.skipped_duplicates;inventory=await loadInventory();loadState.inventory="loaded";}
+      renderAll();showCSVFeedback(imported+" fictional test record"+(imported===1?" was":"s were")+" imported"+(isGuest?" to this browser's guest workspace":" to your account")+(duplicates?"; "+duplicates+" duplicate row"+(duplicates===1?" was":"s were")+" skipped":"")+".",false);document.getElementById("csvPreview").hidden=true;csvPreviewRows=[];csvImportDigest="";document.getElementById("inventoryCsvFile").value="";
+    }catch(error){showCSVFeedback(error.message||"The CSV import did not complete.",true);button.disabled=false;button.textContent="Import "+rows.length+" valid record"+(rows.length===1?"":"s");}
+  }
 
   /* ================= Date parsing engine ================= */
   const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11};
@@ -436,13 +1068,15 @@
     }
 
     // Pattern B: numeric MM/YYYY or MM-YYYY (not part of a longer DD/MM/YYYY match)
-    const reMonYearNum = /\b(\d{1,2})[\/\-\.](\d{4})\b/g;
+    const reMonYearNum = /\b(\d{1,2})[\/\-\.](\d{2,4})\b/g;
     while((m = reMonYearNum.exec(text)) !== null){
+      // Ignore a month/year-looking substring inside a full DD/MM/YYYY date.
+      if((m.index > 0 && /[\/\-\.]/.test(text[m.index - 1])) || /[\/\-\.]/.test(text[m.index + m[0].length] || "")) continue;
       const mon = parseInt(m[1],10) - 1;
-      const yr = parseInt(m[2],10);
+      const yr = fullYear(m[2]);
       if(mon < 0 || mon > 11) continue;
       candidates.push({
-        index: m.index, raw: m[0],
+        index: m.index, end: m.index + m[0].length, raw: m[0],
         date: lastDayOfMonth(yr, mon),
         isMonthYearOnly: true
       });
@@ -472,7 +1106,7 @@
 
     // attach context (40 chars before the match) for keyword scoring
     candidates.forEach(c => {
-      c.context = text.slice(Math.max(0, c.index-25), c.index).toUpperCase();
+      c.context = text.slice(Math.max(0, c.index-25), Math.min(text.length, (c.end || c.index) + 25)).toUpperCase();
     });
     candidates.sort((x,y)=>x.index-y.index);
     return candidates;
@@ -537,30 +1171,49 @@
   }
 
   /* ================= OCR ================= */
+
   async function runOCR(dataUrl){
     const statusEl = document.getElementById("ocrStatus");
     const statusText = document.getElementById("ocrStatusText");
     statusEl.style.display = "flex";
     statusText.textContent = "Reading packageâ€¦";
     try{
-      if(typeof Tesseract === "undefined"){
-        throw new Error("OCR engine unavailable");
+      const blob = await (await fetch(dataUrl)).blob();
+      const formData = new FormData();
+      formData.append("file", blob, "scan.jpg");
+
+      statusText.textContent = "Uploading to serverâ€¦";
+      const data = await api("/api/scan", { method: "POST", body: formData });
+
+      const rawEl = document.getElementById("rawText");
+      const noteEl = document.getElementById("detectNote");
+      if(data.raw_text){
+        rawEl.style.display = "block";
+        rawEl.textContent = data.raw_text.slice(0, 600);
       }
-      const result = await Tesseract.recognize(dataUrl, "eng", {
-        logger: (info) => {
-          if(info.status === "recognizing text"){
-            statusText.textContent = "Reading packageâ€¦ " + Math.round(info.progress*100) + "%";
-          } else if (info.status) {
-            statusText.textContent = info.status.charAt(0).toUpperCase() + info.status.slice(1) + "â€¦";
-          }
-        }
-      });
-      const text = result.data.text || "";
-      applyExtraction(text);
+      if(data.name) document.getElementById("fName").value = data.name;
+      const expiry = data.expiry;
+      const mfg = data.mfg;
+      const batch = data.batch;
+      if(expiry) document.getElementById("fExp").value = expiry;
+      if(mfg) document.getElementById("fMfg").value = mfg;
+      if(batch) document.getElementById("fBatch").value = batch;
+
+      noteEl.style.display = "block";
+      const parts = [];
+      if(data.name) parts.push("<b>Name detected:</b> " + escapeHtml(data.name));
+      if(batch) parts.push("<b>Batch detected:</b> " + escapeHtml(batch));
+      if(expiry) parts.push("<b>Expiry detected:</b> " + escapeHtml(expiry));
+      if(mfg) parts.push("<b>Mfg detected:</b> " + escapeHtml(mfg));
+      if(parts.length){
+        noteEl.innerHTML = parts.join(" &nbsp;Â·&nbsp; ") + ". Double-check against the package.";
+      } else {
+        noteEl.innerHTML = "<b>No clear data found</b> in the scanned text. Zoom in on the printed details and rescan, or enter it manually below.";
+      }
     }catch(err){
       console.error(err);
       document.getElementById("detectNote").style.display = "block";
-      document.getElementById("detectNote").innerHTML = "<b>Couldn't read the image automatically.</b> Enter the details below by hand â€” the fields still save and get tracked normally.";
+      document.getElementById("detectNote").textContent = "Could not read the image: " + (err.message || "check the backend connection and try again.");
     }finally{
       statusEl.style.display = "none";
     }
@@ -594,19 +1247,26 @@
 
   modeScanBtn.addEventListener("click", () => {
     modeScanBtn.classList.add("active"); modeManualBtn.classList.remove("active");
+    modeScanBtn.setAttribute("aria-pressed","true"); modeManualBtn.setAttribute("aria-pressed","false");
+    scanGrid.classList.remove("manual-mode");
     dropzoneCol().style.display = "";
   });
   modeManualBtn.addEventListener("click", () => {
     modeManualBtn.classList.add("active"); modeScanBtn.classList.remove("active");
+    modeManualBtn.setAttribute("aria-pressed","true"); modeScanBtn.setAttribute("aria-pressed","false");
+    scanGrid.classList.add("manual-mode");
     dropzoneCol().style.display = "none";
   });
 
   /* ================= Dropzone / file input ================= */
   const dropzone = document.getElementById("dropzone");
-  const fileInput = document.getElementById("fileInput");
 
-  dropzone.addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", (e) => {
+  dropzone.addEventListener("click", (event) => {
+    if(event.target.closest("button")) return;
+    document.getElementById("fileInput")?.click();
+  });
+  dropzone.addEventListener("change", (e) => {
+    if(e.target.id !== "fileInput") return;
     const file = e.target.files[0];
     if(!file) return;
     const reader = new FileReader();
@@ -630,15 +1290,14 @@
   }
   function resetDropzone(){
     pendingImageDataUrl = null;
-    fileInput.value = "";
+    const currentInput = document.getElementById("fileInput");
+    if(currentInput) currentInput.value = "";
     dropzone.classList.remove("hasimg");
     dropzone.innerHTML =
       '<svg class="icon" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.5"/></svg>' +
       '<div><b style="font-size:13px;">Tap to capture or upload</b></div>' +
       '<div class="hint">Front-facing expiry stamp works best</div>' +
       '<input type="file" id="fileInput" accept="image/*" capture="environment">';
-    document.getElementById("fileInput").addEventListener("change", fileInput.onchange);
-    dropzone.addEventListener("click", () => document.getElementById("fileInput").click());
   }
 
   /* ================= Add to inventory ================= */
@@ -648,18 +1307,91 @@
     const mfg = document.getElementById("fMfg").value;
     const exp = document.getElementById("fExp").value;
 
-    if(!name){ flashField("fName"); return; }
-    if(!exp){ flashField("fExp"); return; }
+    if(!name){ flashField("fName"); showFormFeedback("Enter a medicine name before saving it.","error"); return; }
+    if(!exp){ flashField("fExp"); showFormFeedback("Choose an expiry date before saving this medicine.","error"); return; }
+    if(mfg && mfg>exp){ flashField("fMfg"); showFormFeedback("The manufacture date must be on or before the expiry date.","error"); return; }
 
-    inventory.push({
-      id: "m_" + Date.now() + "_" + Math.random().toString(36).slice(2,7),
-      name, batch: batch || null, mfg: mfg || null, exp,
-      addedAt: new Date().toISOString()
-    });
-    await saveInventory(inventory);
-    clearForm();
-    renderAll();
+    const sensitive = document.getElementById("fTempSensitive").checked;
+    const tempMin = document.getElementById("fTempMin").value;
+    const tempMax = document.getElementById("fTempMax").value;
+    if(sensitive && (tempMin === "" || tempMax === "" || Number(tempMin) >= Number(tempMax))){
+      document.getElementById("fTempMin").focus();
+      showFormFeedback("Enter a valid minimum and maximum storage temperature.","error");
+      return;
+    }
+    const addButton = document.getElementById("addBtn");
+    const wasEditing = Boolean(editingMedicineId);
+    showFormFeedback(wasEditing ? "Saving medicine changes..." : "Saving medicine to your inventory...","pending");
+    addButton.disabled = true;
+    addButton.textContent = "Saving...";
+    try{
+      const medicineData={name,batch:batch||null,mfg:mfg||null,exp,
+        temp_sensitive:sensitive,temp_min:sensitive?Number(tempMin):null,
+        temp_max:sensitive?Number(tempMax):null};
+      let saved;
+      if(wasEditing){
+        const index=inventory.findIndex(item=>item.id===editingMedicineId);
+        if(index<0) throw new Error("This medicine is no longer in your inventory. Refresh and try again.");
+        if(isGuest){
+          const previous=inventory[index];
+          inventory[index]={...previous,...medicineData};
+          try{persistGuestWorkspace();}catch(storageError){inventory[index]=previous;throw new Error("Could not save changes in this browser. Check available site storage and retry.");}
+          saved=inventory[index];
+        }else{
+          saved=await api("/api/medicines/"+encodeURIComponent(editingMedicineId),{method:"PUT",body:JSON.stringify(medicineData)});
+          inventory[index]=saved;
+        }
+      }else if(isGuest){
+        const guestId=createGuestId();
+        saved={...medicineData,id:guestId,guest_id:guestId,added_at:new Date().toISOString()};
+        inventory.unshift(saved);
+        try{persistGuestWorkspace();}catch(storageError){inventory=inventory.filter(item=>item.id!==guestId);throw new Error("Could not save in this browser. Check available site storage and try again.");}
+      }else{
+        saved=await api("/api/medicines",{method:"POST",body:JSON.stringify(medicineData)});
+        inventory.unshift(saved);
+      }
+      clearForm();
+      renderAll();
+      showFormFeedback(saved.name+(wasEditing?" was updated.":(" was added to your "+(isGuest?"local guest workspace.":"inventory."))),"success");
+    }catch(error){ showFormFeedback(error.message || "Could not save this medicine. Check the backend connection and try again.","error"); }
+    finally{ addButton.disabled = false; addButton.textContent = editingMedicineId ? "Save changes" : "Add to inventory"; }
   });
+
+  document.getElementById("cancelEditBtn").addEventListener("click", cancelMedicineEdit);
+
+  function beginMedicineEdit(id){
+    const item=inventory.find(medicine=>medicine.id===id);
+    if(!item)return;
+    editingMedicineId=id;
+    document.getElementById("fName").value=item.name||"";
+    document.getElementById("fBatch").value=item.batch||"";
+    document.getElementById("fMfg").value=item.mfg||"";
+    document.getElementById("fExp").value=item.exp||"";
+    document.getElementById("fTempSensitive").checked=!!item.temp_sensitive;
+    document.getElementById("fTempMin").value=item.temp_min??"";
+    document.getElementById("fTempMax").value=item.temp_max??"";
+    document.getElementById("tempControls").classList.toggle("visible",!!item.temp_sensitive);
+    document.getElementById("addBtn").textContent="Save changes";
+    document.getElementById("cancelEditBtn").hidden=false;
+    document.getElementById("detectNote").style.display="none";
+    document.getElementById("rawText").style.display="none";
+    document.getElementById("formFeedback").hidden=true;
+    resetDropzone();
+    modeManualBtn.click();
+    setPage("scan");
+  }
+
+  function cancelMedicineEdit(){
+    clearForm();
+    setPage("inventory");
+  }
+
+  function showFormFeedback(message,state){
+    const feedback=document.getElementById("formFeedback");
+    feedback.className="form-feedback"+(state==="error"?" error":"");
+    feedback.textContent=message;
+    feedback.hidden=false;
+  }
 
   function flashField(id){
     const el = document.getElementById(id);
@@ -673,8 +1405,16 @@
     document.getElementById("fBatch").value = "";
     document.getElementById("fMfg").value = "";
     document.getElementById("fExp").value = "";
+    document.getElementById("fTempSensitive").checked = false;
+    document.getElementById("fTempMin").value = "";
+    document.getElementById("fTempMax").value = "";
+    editingMedicineId = null;
+    document.getElementById("addBtn").textContent = "Add to inventory";
+    document.getElementById("cancelEditBtn").hidden = true;
+    document.getElementById("tempControls").classList.remove("visible");
     document.getElementById("detectNote").style.display = "none";
     document.getElementById("rawText").style.display = "none";
+    document.getElementById("formFeedback").hidden = true;
     resetDropzone();
   }
 
@@ -696,35 +1436,85 @@
   const thresholdInput = document.getElementById("thresholdInput");
   thresholdInput.addEventListener("change", async () => {
     let v = parseInt(thresholdInput.value, 10);
-    if(isNaN(v) || v < 1) v = 90;
+    if(!Number.isInteger(v) || v < 1 || v > 365){
+      thresholdInput.value = thresholdDays;
+      thresholdInput.setCustomValidity("Enter an alert window from 1 to 365 days.");
+      thresholdInput.reportValidity();
+      thresholdInput.setCustomValidity("");
+      return;
+    }
     thresholdDays = v;
     thresholdInput.value = v;
-    await saveSettings({thresholdDays});
-    renderAll();
+    try{
+      if(isGuest){guestWorkspace.thresholdDays=v;guestWorkspace.thresholdTouched=true;persistGuestWorkspace();updateWorkspaceChrome();}
+      else await saveSettings({thresholdDays});
+      renderAll();
+    }catch(error){showError(error);}
   });
 
   /* ================= Rendering ================= */
   function renderStats(){
-    let expired=0, near=0, valid=0;
-    inventory.forEach(item => {
-      const s = statusFor(item.exp);
-      if(s==="expired") expired++; else if(s==="near") near++; else if(s==="valid") valid++;
-    });
-    document.getElementById("statExpired").textContent = expired;
-    document.getElementById("statNear").textContent = near;
-    document.getElementById("statValid").textContent = valid;
-    document.getElementById("statTotal").textContent = inventory.length;
+    const values={statExpired:"-",statNear:"-",statValid:"-",statTotal:"-"};
+    if(loadState.inventory === "loaded"){
+      let expired=0,near=0;
+      inventory.forEach(item=>{const status=statusFor(item.exp);if(status==="expired")expired++;else if(status==="near")near++;});
+      values.statExpired=String(expired); values.statNear=String(near); values.statTotal=String(inventory.length);
+      document.getElementById("statNearNote").textContent="Within the next "+thresholdDays+" days";
+      document.getElementById("statExpiredNote").textContent=expired?"Needs attention in inventory":"No expired medicines";
+      document.getElementById("statTotalNote").textContent=inventory.length===1?"Medicine currently tracked":"Medicines currently tracked";
+      if(loadState.readings==="error"){
+        values.statValid="--";
+        document.getElementById("storageHealthNote").textContent="Temperature readings unavailable";
+      }else{
+        const monitored=inventory.filter(item=>item.temp_sensitive);
+        const latest=new Map();
+        temperatureReadings.forEach(reading=>{if(!latest.has(reading.medicine_id))latest.set(reading.medicine_id,reading);});
+        const measured=monitored.filter(item=>latest.has(item.id));
+        if(!monitored.length){values.statValid="--";document.getElementById("storageHealthNote").textContent="No temperature-sensitive medicines";}
+        else if(!measured.length){values.statValid="--";document.getElementById("storageHealthNote").textContent="No storage readings recorded";}
+        else{
+          const inRange=measured.filter(item=>{const r=latest.get(item.id);return Number(r.temp_c)>=Number(item.temp_min)&&Number(r.temp_c)<=Number(item.temp_max);}).length;
+          values.statValid=Math.round(inRange/measured.length*100)+"%";
+          document.getElementById("storageHealthNote").textContent=inRange+" of "+measured.length+" latest readings in range";
+        }
+      }
+    }else{
+      document.getElementById("statTotalNote").textContent=loadState.inventory==="loading"?"Loading your inventory":"Inventory unavailable";
+      document.getElementById("statNearNote").textContent="Using your alert window";
+      document.getElementById("statExpiredNote").textContent="Expiry summary unavailable";
+      document.getElementById("storageHealthNote").textContent="Storage summary unavailable";
+    }
+    Object.entries(values).forEach(([id,value])=>document.getElementById(id).textContent=value);
   }
 
   function renderAlerts(){
     const list = document.getElementById("alertList");
     const sub = document.getElementById("alertSub");
+    if(loadState.inventory === "loading"){
+      sub.textContent = "Loading inventory...";
+      list.innerHTML = '<div class="empty-note">Checking expiry dates and storage readings...</div>';
+      return;
+    }
+    if(loadState.inventory === "error"){
+      sub.textContent = "Alerts unavailable";
+      list.innerHTML = '<div class="empty-note">Inventory could not be loaded. Use Retry above to try again.</div>';
+      return;
+    }
     const flagged = inventory
       .map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}))
       .filter(x => x.s === "expired" || x.s === "near")
       .sort((a,b)=> a.d - b.d);
+    const latestByMedicine = new Map();
+    temperatureReadings.forEach(reading => {
+      if(!latestByMedicine.has(reading.medicine_id)) latestByMedicine.set(reading.medicine_id, reading);
+    });
+    const temperatureAlerts = inventory.filter(item => {
+      if(!item.temp_sensitive) return false;
+      const reading = latestByMedicine.get(item.id);
+      return reading && (Number(reading.temp_c) < Number(item.temp_min) || Number(reading.temp_c) > Number(item.temp_max));
+    }).map(item => ({item, reading:latestByMedicine.get(item.id)}));
 
-    if(!flagged.length){
+    if(!flagged.length && !temperatureAlerts.length){
       list.innerHTML = "";
       sub.textContent = inventory.length ? "Nothing needs attention right now" : "Nothing needs attention yet";
       const empty = document.createElement("div");
@@ -733,7 +1523,8 @@
       list.appendChild(empty);
       return;
     }
-    sub.textContent = flagged.length + " item" + (flagged.length>1?"s":"") + " need" + (flagged.length>1?"":"s") + " attention";
+    const attentionCount = flagged.length + temperatureAlerts.length;
+    sub.textContent = attentionCount + " alert" + (attentionCount===1?"":"s") + " need attention";
     list.innerHTML = "";
     flagged.forEach(({item,s,d}) => {
       const row = document.createElement("div");
@@ -745,6 +1536,55 @@
         '<div class="days">' + dayTxt + '</div>';
       list.appendChild(row);
     });
+    temperatureAlerts.forEach(({item,reading}) => {
+      const row = document.createElement("div");
+      row.className = "alert-row expired";
+      row.innerHTML = '<div class="dot"></div><div class="txt"><b>' + escapeHtml(item.name) + '</b> · temperature ' + Number(reading.temp_c).toFixed(1) + ' deg C is outside its ' + item.temp_min + '-' + item.temp_max + ' deg C range</div><div class="days">Check storage</div>';
+      list.appendChild(row);
+    });
+  }
+
+  function renderInventoryChart(){
+    const content=document.getElementById("inventoryChartContent");
+    const empty=document.getElementById("inventoryChartEmpty");
+    const donut=document.getElementById("inventoryDonut");
+    const legend=document.getElementById("inventoryLegend");
+    if(loadState.inventory!=="loaded"){
+      content.hidden=true;
+      empty.hidden=false;
+      empty.textContent=loadState.inventory==="loading"?"Loading inventory expiry data...":"Inventory data is unavailable. Retry the backend connection to load the chart.";
+      return;
+    }
+    if(!inventory.length){
+      content.hidden=true;
+      empty.hidden=false;
+      empty.textContent="No medicines are in your inventory yet. Add or scan a medicine to see the expiry status chart.";
+      return;
+    }
+    const groups=[
+      {label:"Expired",key:"expired",color:"#e35d50"},
+      {label:"Expiring within "+thresholdDays+" days",key:"near",color:"#e2a431"},
+      {label:"Within date",key:"valid",color:"#35a77d"}
+    ];
+    const counts={expired:0,near:0,valid:0};
+    inventory.forEach(item=>{const status=statusFor(item.exp);if(counts[status]!==undefined)counts[status]++;});
+    let angle=0;
+    const segments=groups.map(group=>{
+      const next=angle+(counts[group.key]/inventory.length*360);
+      const segment=group.color+" "+angle+"deg "+next+"deg";
+      angle=next;
+      return segment;
+    });
+    donut.style.background="conic-gradient("+segments.join(",")+")";
+    donut.setAttribute("aria-label",groups.map(group=>group.label+": "+counts[group.key]).join(", "));
+    document.getElementById("inventoryChartTotal").textContent=inventory.length;
+    legend.innerHTML=groups.map(group=>{
+      const count=counts[group.key];
+      const share=Math.round(count/inventory.length*100);
+      return '<div class="inventory-legend-row"><span class="inventory-legend-swatch" style="--legend-color:'+group.color+'"></span><span>'+group.label+'</span><strong>'+count+'</strong><span class="legend-share">'+share+'%</span></div>';
+    }).join("");
+    empty.hidden=true;
+    content.hidden=false;
   }
 
   function renderLedger(){
@@ -752,17 +1592,30 @@
     const empty = document.getElementById("emptyState");
     const sub = document.getElementById("ledgerSub");
 
+    if(loadState.inventory === "loading" || loadState.inventory === "error"){
+      body.innerHTML = "";
+      empty.style.display = "block";
+      empty.querySelector("p").textContent = loadState.inventory === "loading"
+        ? "Loading your inventory..."
+        : "Inventory could not be loaded. Use Retry above to try again.";
+      sub.textContent = loadState.inventory === "loading" ? "Loading..." : "Unavailable";
+      return;
+    }
+
     let items = inventory.map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}));
     if(currentFilter !== "all") items = items.filter(x => x.s === currentFilter);
     if(searchTerm){
       items = items.filter(x =>
         x.item.name.toLowerCase().includes(searchTerm) ||
-        (x.item.batch||"").toLowerCase().includes(searchTerm)
+        (x.item.batch||"").toLowerCase().includes(searchTerm) ||
+        (x.item.generic_name||"").toLowerCase().includes(searchTerm) ||
+        (x.item.barcode||"").toLowerCase().includes(searchTerm)
       );
     }
     items.sort((a,b)=> a.d - b.d);
 
-    sub.textContent = inventory.length + " item" + (inventory.length===1?"":"s") + " tracked";
+    const fictionalCount=inventory.filter(isFictionalRecord).length;
+    sub.textContent=inventory.length+" item"+(inventory.length===1?"":"s")+" tracked"+(fictionalCount?" ? "+fictionalCount+" fictional test":"");
 
     body.innerHTML = "";
     if(!items.length){
@@ -777,23 +1630,32 @@
       const dayTxt = s==="expired" ? ("âˆ’" + Math.abs(d) + "d") : (s==="near" ? (d + "d") : (d + "d"));
       const dayColor = s==="expired" ? "var(--red)" : s==="near" ? "var(--amber)" : "var(--ink-soft)";
       row.innerHTML =
-        '<div class="lname">' + escapeHtml(item.name) + (item.batch ? '<span class="batch">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
+        '<div class="lname"><strong>' + escapeHtml(item.name) + '</strong>' + fictionalBadge(item) + medicineDetails(item) + (item.temp_sensitive ? '<span class="temp-badge">' + item.temp_min + '–' + item.temp_max + ' °C</span>' : '') + (item.batch ? '<span class="batch">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
         '<div class="mono">' + (item.mfg || "â€”") + '</div>' +
         '<div class="mono">' + item.exp + '</div>' +
         '<div class="days-left" style="color:'+dayColor+';">' + dayTxt + '</div>' +
         '<div><span class="stamp ' + s + '">' + statusLabel(s,d) + '</span></div>' +
-        '<div><button class="icon-btn" data-id="' + item.id + '" title="Remove">' +
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
+        '<div class="ledger-actions"><button class="icon-btn edit-btn" data-id="' + item.id + '" title="Edit medicine" aria-label="Edit ' + escapeHtml(item.name) + '">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m14 5 5 5M4 20l4.1-.8L19 8.3a2.1 2.1 0 0 0-3-3L5.1 16.2 4 20Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        '</button><button class="icon-btn delete-btn" data-id="' + item.id + '" title="Remove medicine" aria-label="Remove ' + escapeHtml(item.name) + '">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12a2 0 001 1h6a2 0 001-1l1-12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
         '</button></div>';
       body.appendChild(row);
     });
 
-    body.querySelectorAll(".icon-btn").forEach(btn => {
+    body.querySelectorAll(".edit-btn").forEach(btn => {
+      btn.addEventListener("click", () => beginMedicineEdit(btn.dataset.id));
+    });
+    body.querySelectorAll(".delete-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
-        inventory = inventory.filter(i => i.id !== id);
-        await saveInventory(inventory);
-        renderAll();
+        try{
+          if(!isGuest) await api("/api/medicines/" + encodeURIComponent(id), {method:"DELETE"});
+          inventory=inventory.filter(i=>i.id!==id);
+          temperatureReadings=temperatureReadings.filter(reading=>reading.medicine_id!==id);
+          if(isGuest)persistGuestWorkspace();
+          renderAll();
+        }catch(error){ showError(error); }
       });
     });
   }
@@ -802,20 +1664,504 @@
     return (str||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
 
-  function renderAll(){
-    renderStats();
-    renderAlerts();
-    renderLedger();
+  function renderTemperature(){
+    const sensitive = inventory.filter(item => item.temp_sensitive);
+    const select = document.getElementById("temperatureMedicine");
+    const previous = select.value;
+    select.innerHTML = sensitive.length ? "" : '<option value="">Add a temperature-sensitive medicine first</option>';
+    sensitive.forEach(item => {
+      const option = document.createElement("option"); option.value = item.id;
+      option.textContent = item.name + " (" + item.temp_min + "–" + item.temp_max + " °C)";
+      select.appendChild(option);
+    });
+    if(sensitive.some(item => item.id === previous)) select.value = previous;
+    const box = document.getElementById("temperatureReadings");
+    box.innerHTML = "";
+    if(loadState.readings === "loading"){
+      box.innerHTML = '<div class="empty-note">Loading temperature readings...</div>';
+      return;
+    }
+    if(loadState.readings === "error"){
+      box.innerHTML = '<div class="empty-note">Temperature readings could not be loaded. Use Retry above to try again.</div>';
+      return;
+    }
+    if(!temperatureReadings.length){ box.innerHTML = '<div class="empty-note">No temperature readings logged yet.</div>'; return; }
+    temperatureReadings.forEach(reading => {
+      const outside = Number(reading.temp_c) < Number(reading.temp_min) || Number(reading.temp_c) > Number(reading.temp_max);
+      const row = document.createElement("div"); row.className = "temp-reading" + (outside ? " outside" : "");
+      const when = new Date(reading.recorded_at).toLocaleString();
+      row.innerHTML = '<span><b>' + escapeHtml(reading.medicine_name) + '</b> · ' + Number(reading.temp_c).toFixed(1) + ' °C' + (reading.note ? '<br><span class="mono">'+escapeHtml(reading.note)+'</span>' : '') + '</span><span class="mono">' + (outside ? 'OUT OF RANGE · ' : '') + escapeHtml(when) + '</span>';
+      box.appendChild(row);
+    });
   }
 
-  /* ================= Init ================= */
-  (async function init(){
-    const settings = await loadSettings();
-    thresholdDays = settings.thresholdDays || 90;
-    thresholdInput.value = thresholdDays;
-    inventory = await loadInventory();
+  function isFictionalStatus(value){const status=String(value||"").trim();return !/\b(?:not|non[- ]?)\s*(?:fictional|test|sample)\b/i.test(status)&&/\b(?:fictional|fiction|test|sample)\b/i.test(status);}
+  function isFictionalRecord(item){return isFictionalStatus(item.data_status);}
+  function updateFictionalDataNotice(){document.getElementById("fictionalDataNotice").hidden=!inventory.some(isFictionalRecord);}
+  function fictionalBadge(item){return isFictionalRecord(item)?'<span class="fictional-badge">Fictional test data</span>':'';}
+  function medicineDetails(item){
+    const details=[item.generic_name,item.strength,item.form,item.category].filter(Boolean).map(escapeHtml).join(" / ");
+    const hasStock=!!item.data_status||Number(item.quantity)>0||Number(item.reorder_level)>0||!!item.unit;
+    const stock=hasStock?"Quantity: "+Number(item.quantity||0)+(item.unit?" "+item.unit:"")+" - Reorder at "+Number(item.reorder_level||0):"";
+    const trace=[item.supplier?"Supplier: "+item.supplier:"",item.storage_location?"Location: "+item.storage_location:"",item.barcode?"Barcode: "+item.barcode:""].filter(Boolean).join(" / ");
+    return (details?'<span class="medicine-meta">'+details+'</span>':'')+(stock?'<span class="medicine-meta stock-meta">'+escapeHtml(stock)+'</span>':'')+(trace?'<span class="medicine-meta">'+escapeHtml(trace)+'</span>':'');
+  }
+  function renderAll(){
+    updateFictionalDataNotice();
+    renderStats();
+    renderTemperature();
+    renderAlerts();
+    renderInventoryChart();
+    renderLedger();
+    renderReports();
+    renderDashboard();
+    updateAlertBadge();
+  }
+
+  function latestReadingMap(){
+    const latest=new Map();
+    temperatureReadings.forEach(reading=>{if(!latest.has(reading.medicine_id))latest.set(reading.medicine_id,reading);});
+    return latest;
+  }
+
+  function renderDashboard(){
+    const chart=document.getElementById("expiryChart");
+    const chartEmpty=document.getElementById("expiryChartEmpty");
+    const alerts=document.getElementById("dashboardAlerts");
+    const alertSummary=document.getElementById("dashboardAlertSummary");
+    const table=document.getElementById("dashboardInventory");
+    const tableEmpty=document.getElementById("dashboardInventoryEmpty");
+    const inventoryNote=document.getElementById("dashboardInventoryNote");
+    if(loadState.inventory!=="loaded"){
+      chart.innerHTML=""; chartEmpty.hidden=false;
+      chartEmpty.textContent=loadState.inventory==="loading"?"Loading expiry data...":"Expiry chart unavailable until inventory reconnects.";
+      alerts.innerHTML='<div class="dashboard-empty">'+(loadState.inventory==="loading"?"Loading active alerts...":"Alerts unavailable until inventory reconnects.")+'</div>';
+      alertSummary.textContent="Current expiry and storage alerts";
+      table.innerHTML=""; tableEmpty.hidden=false;
+      tableEmpty.textContent=loadState.inventory==="loading"?"Loading inventory...":"Inventory unavailable. Use Retry to reconnect.";
+      inventoryNote.textContent="Your next-expiring medicines";
+      return;
+    }
+    const groups=[
+      {label:"Expired",key:"expired",test:d=>d<0},
+      {label:"Expiring soon",key:"near",test:d=>d>=0&&d<=thresholdDays},
+      {label:"Within date",key:"valid",test:d=>d>thresholdDays}
+    ];
+    if(!inventory.length){chart.innerHTML="";chartEmpty.hidden=false;chartEmpty.textContent="No medicines to chart yet. Add or scan a medicine to see expiry trends.";}
+    else{
+      chartEmpty.hidden=true;
+      const counts=groups.map(group=>inventory.filter(item=>group.test(daysUntil(item.exp))).length);
+      const max=Math.max(...counts,1);
+      chart.innerHTML=groups.map((group,i)=>'<div class="chart-row '+group.key+'"><span class="chart-label">'+group.label+'</span><div class="chart-track" role="img" aria-label="'+group.label+': '+counts[i]+' medicines"><div class="chart-fill" style="width:'+((counts[i]/max)*100)+'%"></div></div><span class="chart-value">'+counts[i]+'</span></div>').join("");
+    }
+    const expiryAlerts=inventory.map(item=>({item,status:statusFor(item.exp),days:daysUntil(item.exp)})).filter(x=>x.status==="expired"||x.status==="near").sort((a,b)=>a.days-b.days);
+    const latest=latestReadingMap();
+    const tempAlerts=inventory.filter(item=>{const r=latest.get(item.id);return item.temp_sensitive&&r&&(Number(r.temp_c)<Number(item.temp_min)||Number(r.temp_c)>Number(item.temp_max));}).map(item=>({item,reading:latest.get(item.id)}));
+    const alertItems=[...expiryAlerts.map(x=>({type:x.status,item:x.item,label:x.status==="expired"?Math.abs(x.days)+"d overdue":"Expires in "+x.days+"d"})),...tempAlerts.map(x=>({type:"temp",item:x.item,label:Number(x.reading.temp_c).toFixed(1)+" C ? check storage"}))].slice(0,4);
+    if(alertItems.length){
+      alertSummary.textContent=expiryAlerts.length+tempAlerts.length+" alert"+(expiryAlerts.length+tempAlerts.length===1?"":"s")+" need attention";
+      alerts.innerHTML=alertItems.map(x=>'<div class="dashboard-alert '+x.type+'"><span class="dashboard-alert-dot"></span><div class="dashboard-alert-copy"><strong>'+escapeHtml(x.item.name)+'</strong><span>'+(x.item.batch?"Batch "+escapeHtml(x.item.batch)+" ? ":"")+x.label+'</span></div><span class="dashboard-alert-tag">'+(x.type==="expired"?"EXPIRED":x.type==="near"?"SOON":"TEMP")+'</span></div>').join("");
+    }else{
+      alertSummary.textContent="No active expiry or recorded temperature alerts";
+      let note="Nothing needs attention right now. Add medicines to start monitoring.";
+      if(inventory.length&&loadState.readings==="error")note="No expiry alerts. Temperature alerts are unavailable until readings reconnect.";
+      else if(inventory.some(item=>item.temp_sensitive&&!latest.has(item.id)))note="No expiry alerts. Log a storage reading to monitor temperature-sensitive medicines.";
+      alerts.innerHTML='<div class="dashboard-empty">'+note+'</div>';
+    }
+    const rows=[...inventory].map(item=>({item,days:daysUntil(item.exp),status:statusFor(item.exp)})).sort((a,b)=>a.days-b.days).slice(0,5);
+    const fictionalCount=inventory.filter(isFictionalRecord).length;
+    inventoryNote.textContent=inventory.length?"Showing "+rows.length+" of "+inventory.length+" medicines, ordered by expiry"+(fictionalCount?" ? includes "+fictionalCount+" fictional test record"+(fictionalCount===1?"":"s"):""):"Your next-expiring medicines";
+    if(!rows.length){table.innerHTML="";tableEmpty.hidden=false;tableEmpty.textContent="No medicines have been added. Scan a package or enter one manually to start your inventory.";}
+    else{
+      tableEmpty.hidden=true;
+      table.innerHTML=rows.map(({item,status})=>'<tr><td>'+escapeHtml(item.name)+' '+fictionalBadge(item)+'</td><td class="table-batch">'+(item.batch?escapeHtml(item.batch):"?")+'</td><td>'+item.exp+'</td><td><span class="dashboard-status '+status+'">'+statusLabel(status,daysUntil(item.exp))+'</span></td></tr>').join("");
+    }
+  }
+
+  function renderReports(){
+    const content = document.getElementById("reportContent");
+    const empty = document.getElementById("reportEmpty");
+    if(loadState.inventory === "loading"){
+      content.innerHTML = '<div class="empty-note">Loading report data...</div>';
+      empty.hidden = true;
+      return;
+    }
+    if(loadState.inventory === "error"){
+      content.innerHTML = '';
+      empty.hidden = false;
+      empty.querySelector("strong").textContent = "Inventory report unavailable";
+      empty.querySelector("p").textContent = "Reconnect to the MedGuard backend to load current report data.";
+      return;
+    }
+    if(!inventory.length){
+      content.innerHTML = '';
+      empty.hidden = false;
+      empty.querySelector("strong").textContent = "No inventory to report yet";
+      empty.querySelector("p").textContent = "Add or scan a medicine to see expiry and temperature summaries here.";
+      return;
+    }
+    empty.hidden = true;
+    const counts = {expired:0,near:0,valid:0};
+    inventory.forEach(item => { const status=statusFor(item.exp); if(counts[status] !== undefined) counts[status]++; });
+    const total = inventory.length;
+    const latest = new Map();
+    temperatureReadings.forEach(reading => { if(!latest.has(reading.medicine_id)) latest.set(reading.medicine_id,reading); });
+    let outside = 0;
+    inventory.forEach(item => {
+      const reading=latest.get(item.id);
+      if(item.temp_sensitive && reading && (Number(reading.temp_c)<Number(item.temp_min) || Number(reading.temp_c)>Number(item.temp_max))) outside++;
+    });
+    const bars = [["Expired","expired"],["Near expiry","near"],["Within date","valid"]].map(([label,key]) =>
+      '<div class="report-bar-row '+key+'"><span>'+label+'</span><div class="report-bar-track"><div class="report-bar-fill" style="width:'+Math.max(counts[key] ? 4 : 0, counts[key]/total*100)+'%"></div></div><span class="report-bar-value">'+counts[key]+'</span></div>'
+    ).join("");
+    const readingsValue=loadState.readings==="error"?"Unavailable":temperatureReadings.length;
+    const outsideValue=loadState.readings==="error"?"Unavailable":outside;
+    content.innerHTML = '<div class="report-summary">'+
+      '<div class="report-metric"><span>Medicines tracked</span><strong>'+total+'</strong></div>'+
+      '<div class="report-metric"><span>Temperature readings</span><strong>'+readingsValue+'</strong></div>'+
+      '<div class="report-metric"><span>Out-of-range latest readings</span><strong style="color:'+(loadState.readings==="error"?'var(--ink-soft)':outside?'var(--red)':'var(--green)')+'">'+outsideValue+'</strong></div></div>'+
+      '<div class="report-section-title">Expiry distribution</div><div class="report-bars">'+bars+'</div>';
+  }
+
+  function updateAlertBadge(){
+    const badge=document.getElementById("navAlertCount");
+    if(loadState.inventory !== "loaded"){ badge.hidden=true; return; }
+    const expiryCount=inventory.filter(item=>{const s=statusFor(item.exp);return s==="expired"||s==="near";}).length;
+    const latest=new Map();
+    temperatureReadings.forEach(reading=>{if(!latest.has(reading.medicine_id))latest.set(reading.medicine_id,reading);});
+    const tempCount=inventory.filter(item=>{const r=latest.get(item.id);return item.temp_sensitive&&r&&(Number(r.temp_c)<Number(item.temp_min)||Number(r.temp_c)>Number(item.temp_max));}).length;
+    const total=expiryCount+tempCount;
+    badge.textContent=total>99?"99+":String(total);
+    badge.hidden=total===0;
+    const headerDot=document.getElementById("headerAlertDot");
+    if(headerDot) headerDot.hidden=total===0;
+  }
+
+  function setPage(page, updateHash=true){
+    const allowed=["dashboard","scan","inventory","temperature","alerts","reports","settings","account"];
+    if(!allowed.includes(page)) page="dashboard";
+    document.querySelectorAll("[data-view]").forEach(view=>{
+      const active=view.dataset.view===page;
+      view.hidden=!active;
+      // Use an explicit display value too, so custom layout styles cannot override page visibility.
+      view.style.display=active?(view.classList.contains("stat-strip")?"grid":""):"none";
+      view.setAttribute("aria-hidden",String(!active));
+    });
+    document.querySelectorAll(".nav-item[data-page]").forEach(button=>{
+      const active=button.dataset.page===page || (page==="scan"&&button.dataset.page==="dashboard");
+      button.classList.toggle("active",active);
+      if(active) button.setAttribute("aria-current","page"); else button.removeAttribute("aria-current");
+    });
+    const titles={dashboard:"Dashboard",scan:"Scan a package",inventory:"Inventory",temperature:"Temperature Monitoring",alerts:"Alerts",reports:"Reports",settings:"Settings",account:"Account"};
+    document.getElementById("pageTitle").textContent=titles[page];
+    if(page==="account" && currentUser){
+      document.getElementById("profileName").value=currentUser.name;
+      document.getElementById("profileEmail").value=currentUser.email;
+    }
+    if(updateHash && location.hash!=="#"+page) location.hash=page;
+    closeMobileMenu();
+    closeAccountMenu();
+    return page;
+  }
+
+  function closeAccountMenu(){
+    const menu=document.getElementById("accountMenu");
+    const button=document.getElementById("accountMenuBtn");
+    if(menu) menu.hidden=true;
+    if(button) button.setAttribute("aria-expanded","false");
+  }
+
+  function closeMobileMenu(){
+    document.body.classList.remove("mobile-nav-open");
+    document.getElementById("mobileMenuBtn").setAttribute("aria-expanded","false");
+  }
+  document.addEventListener("click",event=>{
+    const pageButton=event.target.closest(".nav-item[data-page], [data-go]");
+    if(pageButton){ setPage(pageButton.dataset.page || pageButton.dataset.go); return; }
+  });
+  document.getElementById("currentDate").textContent=new Intl.DateTimeFormat(undefined,{weekday:"long",month:"long",day:"numeric"}).format(new Date()).toUpperCase();
+  document.getElementById("accountMenuBtn").addEventListener("click",event=>{
+    const menu=document.getElementById("accountMenu");
+    menu.hidden=!menu.hidden;
+    event.currentTarget.setAttribute("aria-expanded",String(!menu.hidden));
+  });
+  document.addEventListener("click",event=>{
+    if(!document.querySelector(".account-menu-wrap").contains(event.target)) closeAccountMenu();
+  });
+  document.getElementById("collapseSidebar").addEventListener("click",()=>{
+    document.body.classList.toggle("sidebar-collapsed");
+    const collapsed=document.body.classList.contains("sidebar-collapsed");
+    document.getElementById("collapseSidebar").setAttribute("aria-label",collapsed?"Expand sidebar":"Collapse sidebar");
+    document.getElementById("collapseSidebar").title=collapsed?"Expand sidebar":"Collapse sidebar";
+  });
+  document.getElementById("mobileMenuBtn").addEventListener("click",event=>{
+    const opened=document.body.classList.toggle("mobile-nav-open");
+    event.currentTarget.setAttribute("aria-expanded",String(opened));
+  });
+  document.getElementById("sidebarScrim").addEventListener("click",closeMobileMenu);
+  document.addEventListener("keydown",event=>{if(event.key==="Escape"){closeMobileMenu();closeAccountMenu();}});
+  window.addEventListener("hashchange",()=>setPage(location.hash.slice(1),false));
+  window.addEventListener("popstate",()=>setPage(location.hash.slice(1),false));
+
+  function showError(error){
+    const note = document.getElementById("detectNote");
+    note.style.display = "block";
+    note.textContent = "Could not complete that action: " + (error.message || "Check the connection and try again.");
+  }
+
+  function updateConnectionStatus(){
+    const failed = Object.entries(loadErrors);
+    const settingsConnection=document.getElementById("settingsConnection");
+    const syncLabel=document.getElementById("syncLabel");
+    if(settingsConnection) settingsConnection.textContent=failed.length ? failed.map(([section,error])=>section+": "+error.message).join(" | ") : "Connected to the MedGuard API.";
+    if(syncLabel) syncLabel.textContent=failed.length ? "Connection needs attention" : "Last synced just now";
+    if(!failed.length){ connectionStatus.hidden = true; return; }
+    connectionStatus.hidden = false;
+    connectionStatus.classList.add("error");
+    connectionMessage.textContent = failed.map(([section,error]) => `${section}: ${error.message}`).join(" | ");
+    retryBtn.hidden = false;
+  }
+
+  async function loadData(){
+    if(isGuest){
+      loadErrors={};
+      inventory=guestWorkspace.medicines;
+      temperatureReadings=guestWorkspace.readings;
+      thresholdDays=guestWorkspace.thresholdDays||90;
+      thresholdInput.value=thresholdDays;
+      loadState.inventory="loaded";
+      loadState.readings="loaded";
+      connectionStatus.hidden=true;
+      retryBtn.disabled=false;
+      renderAll();
+      updateWorkspaceChrome();
+      return;
+    }
+    retryBtn.disabled = true;
+    retryBtn.textContent = "Retrying...";
+    connectionStatus.hidden = false;
+    connectionStatus.classList.remove("error");
+    connectionMessage.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:7px;"></span>Connecting to MedGuard...';
+    loadErrors = {};
+    const [settingsResult, inventoryResult, readingsResult] = await Promise.allSettled([loadSettings(), loadInventory(), loadTemperatureReadings()]);
+    if(settingsResult.status === "fulfilled"){
+      thresholdDays = settingsResult.value.thresholdDays || 90;
+      thresholdInput.value = thresholdDays;
+    }else loadErrors.Settings = settingsResult.reason;
+    if(inventoryResult.status === "fulfilled"){
+      inventory = inventoryResult.value; loadState.inventory = "loaded";
+    }else{ loadState.inventory = "error"; loadErrors.Inventory = inventoryResult.reason; }
+    if(readingsResult.status === "fulfilled"){
+      temperatureReadings = readingsResult.value; loadState.readings = "loaded";
+    }else{ loadState.readings = "error"; loadErrors.Temperature = readingsResult.reason; }
     renderAll();
-  })();
+    updateConnectionStatus();
+    retryBtn.disabled = false;
+    retryBtn.textContent = "Retry";
+  }
+  document.getElementById("chooseCsvBtn").addEventListener("click",()=>document.getElementById("inventoryCsvFile").click());
+  document.getElementById("inventoryCsvFile").addEventListener("change",event=>previewCSVFile(event.target.files[0]));
+  document.getElementById("cancelCsvBtn").addEventListener("click",cancelCSVPreview);
+  document.getElementById("importCsvBtn").addEventListener("click",importCSVRecords);
+  retryBtn.addEventListener("click", loadData);
+  document.getElementById("settingsRetryBtn").addEventListener("click", loadData);
+
+  document.getElementById("fTempSensitive").addEventListener("change", event => {
+    document.getElementById("tempControls").classList.toggle("visible", event.target.checked);
+  });
+  document.getElementById("logTemperatureBtn").addEventListener("click", async () => {
+    const medicineId = document.getElementById("temperatureMedicine").value;
+    const value = document.getElementById("temperatureValue").value;
+    if(!medicineId || value === "") return;
+    const logButton = document.getElementById("logTemperatureBtn");
+    logButton.disabled = true;
+    logButton.textContent = "Logging...";
+    try{
+      const readingData={medicine_id:medicineId,temp_c:Number(value),note:document.getElementById("temperatureNote").value.trim()||null};
+      let reading;
+      if(isGuest){
+        const medicine=inventory.find(item=>item.id===medicineId);
+        reading={...readingData,id:createGuestId(),guest_id:"",medicine_name:medicine?.name||"Medicine",temp_min:medicine?.temp_min,temp_max:medicine?.temp_max,recorded_at:new Date().toISOString()};
+        reading.guest_id=reading.id;
+      }else reading=await api("/api/temperature-readings",{method:"POST",body:JSON.stringify(readingData)});
+      temperatureReadings.unshift(reading);
+      temperatureReadings = temperatureReadings.slice(0,100);
+      if(isGuest)persistGuestWorkspace();
+      document.getElementById("temperatureValue").value = "";
+      document.getElementById("temperatureNote").value = "";
+      renderAll();
+    }catch(error){ showError(error); }
+    finally{ logButton.disabled = false; logButton.textContent = "Log temperature"; }
+  });
+
+  function renderAuthMode(){
+    const signup=authMode==="signup";
+    document.getElementById("authTitle").textContent=signup?"Create your account":"Welcome back";
+    const hasLocalData=hasGuestData();
+    document.getElementById("authSubtitle").textContent=hasLocalData
+      ?(signup?"Create your account and this browser's guest inventory will sync after sign-up. Use at least 12 characters for your password.":"Sign in and this browser's guest inventory will sync to your account.")
+      :(signup?"Create a private workspace for your medicine inventory. Use at least 12 characters for your password.":"Sign in to access your private inventory and alerts.");
+    document.getElementById("authSecurityNote").textContent=hasLocalData
+      ?"Guest data stays in this browser until the account sync completes successfully."
+      :"Your guest workspace stays in this browser until you create an account and sync it.";
+    document.getElementById("authNameField").hidden=!signup;
+    document.getElementById("authName").required=signup;
+    const password=document.getElementById("authPassword");
+    password.minLength=signup?12:1;
+    password.autocomplete=signup?"new-password":"current-password";
+    password.placeholder=signup?"At least 12 characters":"Enter your password";
+    document.getElementById("authSubmit").textContent=signup?"Create account":"Sign in";
+    document.getElementById("authSwitchText").textContent=signup?"Already have an account?":"New to MedGuard?";
+    document.getElementById("authSwitchBtn").textContent=signup?"Sign in":"Create an account";
+    document.getElementById("authFeedback").hidden=true;
+  }
+
+  function updateAccountIdentity(){
+    if(!currentUser)return;
+    const parts=currentUser.name.trim().split(/\s+/).filter(Boolean);
+    const initials=(parts.length>1?parts[0][0]+parts[parts.length-1][0]:parts[0].slice(0,2)).toUpperCase();
+    document.getElementById("userInitials").textContent=initials;
+    document.getElementById("menuUserName").textContent=currentUser.name;
+    document.getElementById("menuUserEmail").textContent=currentUser.email;
+    document.getElementById("profileInitials").textContent=initials;
+    document.getElementById("profileName").value=currentUser.name;
+    document.getElementById("profileEmail").value=currentUser.email;
+    isGuest=false;
+    updateWorkspaceChrome();
+  }
+
+  function showAuthScreen(message=""){
+    currentUser=null;
+    inventory=[];
+    temperatureReadings=[];
+    loadState.inventory="loading";
+    loadState.readings="loading";
+    document.getElementById("appShell").hidden=true;
+    document.getElementById("authScreen").hidden=false;
+    document.getElementById("authPassword").value="";
+    const passwordToggle=document.getElementById("passwordToggle");
+    document.getElementById("authPassword").type="password";
+    passwordToggle.textContent="Show";
+    passwordToggle.setAttribute("aria-label","Show password");
+    passwordToggle.setAttribute("aria-pressed","false");
+    authMode="login";
+    renderAuthMode();
+    if(message){const feedback=document.getElementById("authFeedback");feedback.textContent=message;feedback.hidden=false;}
+    closeAccountMenu();
+  }
+
+  async function bootstrapAccount(){
+    renderAuthMode();
+    try{guestWorkspace=readGuestWorkspace();}catch(error){workspaceMessage="Browser storage is unavailable; guest changes may not survive closing this tab.";}
+    inventory=guestWorkspace.medicines;
+    temperatureReadings=guestWorkspace.readings;
+    thresholdDays=guestWorkspace.thresholdDays;
+    thresholdInput.value=thresholdDays;
+    loadState.inventory="loaded";
+    loadState.readings="loaded";
+    updateWorkspaceChrome();
+    renderAll();
+    try{
+      const response=await api("/api/auth/me");
+      currentUser=response.user;
+      isGuest=false;
+      document.getElementById("authScreen").hidden=true;
+      document.getElementById("appShell").hidden=false;
+      updateAccountIdentity();
+      setPage(location.hash.slice(1)||"dashboard",false);
+      renderAll();
+      await loadData();
+    }catch(error){
+      enterGuestWorkspace(location.hash.slice(1)||"dashboard");
+    }
+  }
+
+  document.getElementById("passwordToggle").addEventListener("click",event=>{
+    const password=document.getElementById("authPassword");
+    const reveal=password.type==="password";
+    password.type=reveal?"text":"password";
+    event.currentTarget.textContent=reveal?"Hide":"Show";
+    event.currentTarget.setAttribute("aria-label",reveal?"Hide password":"Show password");
+    event.currentTarget.setAttribute("aria-pressed",String(reveal));
+  });
+
+  document.getElementById("authSwitchBtn").addEventListener("click",()=>{
+    authMode=authMode==="login"?"signup":"login";
+    renderAuthMode();
+  });
+  document.getElementById("continueGuestBtn").addEventListener("click",()=>enterGuestWorkspace(authReturnPage));
+  document.getElementById("syncWorkspaceBtn").addEventListener("click",async()=>{
+    if(isGuest){openAccountAccess();return;}
+    const button=document.getElementById("syncWorkspaceBtn");
+    button.disabled=true;
+    const hadGuestData=hasGuestData();
+    const synced=await syncGuestWorkspace();
+    if(synced){await loadData();if(hadGuestData)announceGuestSync();}
+    button.disabled=false;
+  });
+  document.getElementById("accountSyncBtn").addEventListener("click",openAccountAccess);
+  document.getElementById("menuSyncBtn").addEventListener("click",()=>{closeAccountMenu();openAccountAccess();});
+  document.getElementById("menuSignInBtn").addEventListener("click",()=>{closeAccountMenu();openAccountAccess();});
+  document.getElementById("authForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const submit=document.getElementById("authSubmit");
+    const feedback=document.getElementById("authFeedback");
+    feedback.hidden=true;
+    submit.disabled=true;
+    submit.textContent=authMode==="signup"?"Creating account...":"Signing in...";
+    const payload={email:document.getElementById("authEmail").value.trim(),password:document.getElementById("authPassword").value};
+    if(authMode==="signup")payload.name=document.getElementById("authName").value.trim();
+    try{
+      const response=await api("/api/auth/"+authMode,{method:"POST",body:JSON.stringify(payload)});
+      currentUser=response.user;
+      isGuest=false;
+      const hadGuestData=hasGuestData();
+      const guestSyncSucceeded=await syncGuestWorkspace();
+      document.getElementById("authScreen").hidden=true;
+      document.getElementById("appShell").hidden=false;
+      updateAccountIdentity();
+      setPage(authReturnPage||location.hash.slice(1)||"dashboard",false);
+      renderAll();
+      await loadData();
+      if(hadGuestData&&guestSyncSucceeded)announceGuestSync();
+    }catch(error){
+      feedback.textContent=error.message||"Could not sign in. Please try again.";
+      feedback.hidden=false;
+    }finally{
+      submit.disabled=false;
+      submit.textContent=authMode==="signup"?"Create account":"Sign in";
+    }
+  });
+  document.getElementById("logoutBtn").addEventListener("click",async()=>{
+    const button=document.getElementById("logoutBtn");
+    button.disabled=true;
+    try{await api("/api/auth/logout",{method:"POST"});enterGuestWorkspace("dashboard");}
+    catch(error){window.alert(error.message||"Could not sign out. Please try again.");}
+    finally{button.disabled=false;}
+  });
+  document.getElementById("profileForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const button=document.getElementById("saveProfileBtn");
+    const feedback=document.getElementById("profileFeedback");
+    button.disabled=true;
+    feedback.hidden=true;
+    try{
+      const response=await api("/api/auth/profile",{method:"PUT",body:JSON.stringify({name:document.getElementById("profileName").value.trim()})});
+      currentUser=response.user;
+      updateAccountIdentity();
+      feedback.className="profile-feedback";
+      feedback.textContent="Profile saved.";
+      feedback.hidden=false;
+    }catch(error){
+      feedback.className="profile-feedback error";
+      feedback.textContent=error.message||"Could not save your profile.";
+      feedback.hidden=false;
+    }finally{button.disabled=false;}
+  });
+
+  /* ================= Init ================= */
+  document.getElementById("currentDate").textContent=new Intl.DateTimeFormat(undefined,{weekday:"long",month:"long",day:"numeric"}).format(new Date()).toUpperCase();
+  bootstrapAccount();
 
 })();
 </script>

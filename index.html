@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="medguard-api-base" content="">
 <title>MedGuard â€” Expiry Detection Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+
 <style>
   :root{
     --paper:#EFF3F1;
@@ -219,6 +220,15 @@
   .stamp.near{color:var(--amber);background:rgba(180,121,31,.10);}
   .stamp.valid{color:var(--green);background:rgba(61,122,84,.08);}
 
+  .temp-controls{display:none;}
+  .temp-controls.visible{display:grid;}
+  .temp-reading{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:9px;background:var(--paper);font-size:12.5px;}
+  .temp-reading.outside{border-color:rgba(178,58,50,.45);background:rgba(178,58,50,.06);}
+  .temp-readings{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+  .temp-badge{font-size:11px;color:var(--teal-deep);background:#eaf3f1;border-radius:5px;padding:3px 6px;margin-left:6px;}
+  .connection-status{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin:-8px 0 20px;border:1px solid var(--line);border-radius:9px;background:#eaf3f1;color:var(--teal-deep);font-size:13px;}
+  .connection-status.error{border-color:rgba(178,58,50,.35);background:rgba(178,58,50,.06);color:var(--red);}
+  .connection-status[hidden]{display:none;}
   .empty-state{
     text-align:center;padding:46px 20px;color:var(--ink-soft);
   }
@@ -256,6 +266,11 @@
       </div>
     </div>
   </header>
+
+  <div class="connection-status" id="connectionStatus" role="status" aria-live="polite">
+    <span id="connectionMessage"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:7px;"></span>Connecting to MedGuard...</span>
+    <button class="btn btn-ghost" id="retryBtn" type="button" hidden>Retry</button>
+  </div>
 
   <section class="stat-strip">
     <div class="stat expired"><div class="n" id="statExpired">0</div><div class="l">Expired</div></div>
@@ -312,9 +327,32 @@
             <label>Expiry date <span style="color:var(--red);">*</span></label>
             <input type="date" id="fExp">
           </div>
+          <div class="field">
+            <label><input type="checkbox" id="fTempSensitive"> Temperature-sensitive medicine</label>
+          </div>
+          <div class="row2 temp-controls" id="tempControls">
+            <div class="field"><label>Minimum storage (°C)</label><input type="number" id="fTempMin" step="0.1" placeholder="e.g. 2"></div>
+            <div class="field"><label>Maximum storage (°C)</label><input type="number" id="fTempMax" step="0.1" placeholder="e.g. 8"></div>
+          </div>
           <button class="btn btn-primary btn-full" id="addBtn">Add to inventory</button>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- TEMPERATURE MONITORING -->
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Temperature monitoring</h2><div class="sub">Manually log storage readings against each medicine's labeled range</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="row2">
+        <div class="field"><label>Temperature-sensitive medicine</label><select id="temperatureMedicine"><option value="">Add a temperature-sensitive medicine first</option></select></div>
+        <div class="field"><label>Current temperature (°C)</label><input type="number" id="temperatureValue" step="0.1" placeholder="e.g. 5.2"></div>
+      </div>
+      <div class="field"><label>Note (optional)</label><input type="text" id="temperatureNote" maxlength="500" placeholder="e.g. Morning refrigerator check"></div>
+      <button class="btn btn-primary" id="logTemperatureBtn">Log temperature</button>
+      <div class="temp-readings" id="temperatureReadings"><div class="empty-note">No temperature readings logged yet.</div></div>
     </div>
   </section>
 
@@ -365,33 +403,53 @@
 (function(){
   "use strict";
 
-  /* ================= Storage helpers ================= */
-  const STORE_KEY = "medguard:inventory";
-  const SETTINGS_KEY = "medguard:settings";
-
-  async function loadInventory(){
+  /* ================= API storage ================= */
+  const configuredApiBase = document.querySelector('meta[name="medguard-api-base"]')?.content.trim()
+    || new URLSearchParams(location.search).get("api")?.trim();
+  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  const defaultApiBase = location.protocol === "file:"
+    ? "http://localhost:8000"
+    : location.port === "8000"
+      ? location.origin
+      : localHost
+        ? `${location.protocol}//${location.hostname}:8000`
+        : location.origin;
+  const API_BASE = (configuredApiBase || defaultApiBase).replace(/\/$/, "");
+  const connectionStatus = document.getElementById("connectionStatus");
+  const connectionMessage = document.getElementById("connectionMessage");
+  const retryBtn = document.getElementById("retryBtn");
+  const loadState = {inventory:"loading", readings:"loading"};
+  let loadErrors = {};
+  async function api(path, options={}){
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let response;
     try{
-      const r = await window.storage.get(STORE_KEY, false);
-      return r && r.value ? JSON.parse(r.value) : [];
-    }catch(e){ return []; }
+      response = await fetch(API_BASE + path, {
+        ...options,
+        headers:{...(options.body != null && !(options.body instanceof FormData) ? {"Content-Type":"application/json"} : {}),...(options.headers||{})},
+        signal:options.signal || controller.signal
+      });
+    }catch(error){
+      if(error.name === "AbortError") throw new Error(`The request to ${API_BASE} timed out. Check that the backend is running.`);
+      throw new Error(`Can't reach ${API_BASE}. Start the backend and check that this page's origin is allowed by CORS.`);
+    }finally{ clearTimeout(timeout); }
+    if(!response.ok){
+      let detail = "Request failed (" + response.status + ")";
+      try{ const body = await response.json(); detail = body.detail || detail; }catch(e){}
+      throw new Error(detail);
+    }
+    if(response.status === 204) return null;
+    return response.json();
   }
-  async function saveInventory(list){
-    try{ await window.storage.set(STORE_KEY, JSON.stringify(list), false); }
-    catch(e){ console.error("save failed", e); }
-  }
-  async function loadSettings(){
-    try{
-      const r = await window.storage.get(SETTINGS_KEY, false);
-      return r && r.value ? JSON.parse(r.value) : {thresholdDays:90};
-    }catch(e){ return {thresholdDays:90}; }
-  }
-  async function saveSettings(s){
-    try{ await window.storage.set(SETTINGS_KEY, JSON.stringify(s), false); }
-    catch(e){ console.error("save settings failed", e); }
-  }
+  async function loadInventory(){ return api("/api/medicines"); }
+  async function loadSettings(){ return api("/api/settings"); }
+  async function saveSettings(settings){ return api("/api/settings", {method:"PUT", body:JSON.stringify(settings)}); }
+  async function loadTemperatureReadings(){ return api("/api/temperature-readings"); }
 
   /* ================= State ================= */
   let inventory = [];
+  let temperatureReadings = [];
   let thresholdDays = 90;
   let currentFilter = "all";
   let searchTerm = "";
@@ -537,30 +595,46 @@
   }
 
   /* ================= OCR ================= */
+
   async function runOCR(dataUrl){
     const statusEl = document.getElementById("ocrStatus");
     const statusText = document.getElementById("ocrStatusText");
     statusEl.style.display = "flex";
     statusText.textContent = "Reading packageâ€¦";
     try{
-      if(typeof Tesseract === "undefined"){
-        throw new Error("OCR engine unavailable");
+      const blob = await (await fetch(dataUrl)).blob();
+      const formData = new FormData();
+      formData.append("file", blob, "scan.jpg");
+
+      statusText.textContent = "Uploading to serverâ€¦";
+      const data = await api("/api/scan", { method: "POST", body: formData });
+
+      const rawEl = document.getElementById("rawText");
+      const noteEl = document.getElementById("detectNote");
+      if(data.raw_text){
+        rawEl.style.display = "block";
+        rawEl.textContent = data.raw_text.slice(0, 600);
       }
-      const result = await Tesseract.recognize(dataUrl, "eng", {
-        logger: (info) => {
-          if(info.status === "recognizing text"){
-            statusText.textContent = "Reading packageâ€¦ " + Math.round(info.progress*100) + "%";
-          } else if (info.status) {
-            statusText.textContent = info.status.charAt(0).toUpperCase() + info.status.slice(1) + "â€¦";
-          }
-        }
-      });
-      const text = result.data.text || "";
-      applyExtraction(text);
+      if(data.name) document.getElementById("fName").value = data.name;
+      if(data.expiry) document.getElementById("fExp").value = data.expiry;
+      if(data.mfg) document.getElementById("fMfg").value = data.mfg;
+      if(data.batch) document.getElementById("fBatch").value = data.batch;
+
+      noteEl.style.display = "block";
+      const parts = [];
+      if(data.name) parts.push("<b>Name detected:</b> " + escapeHtml(data.name));
+      if(data.batch) parts.push("<b>Batch detected:</b> " + escapeHtml(data.batch));
+      if(data.expiry) parts.push("<b>Expiry detected:</b> " + escapeHtml(data.expiry));
+      if(data.mfg) parts.push("<b>Mfg detected:</b> " + escapeHtml(data.mfg));
+      if(parts.length){
+        noteEl.innerHTML = parts.join(" &nbsp;Â·&nbsp; ") + ". Double-check against the package.";
+      } else {
+        noteEl.innerHTML = "<b>No clear data found</b> in the scanned text. Zoom in on the printed details and rescan, or enter it manually below.";
+      }
     }catch(err){
       console.error(err);
       document.getElementById("detectNote").style.display = "block";
-      document.getElementById("detectNote").innerHTML = "<b>Couldn't read the image automatically.</b> Enter the details below by hand â€” the fields still save and get tracked normally.";
+      document.getElementById("detectNote").textContent = "Could not read the image: " + (err.message || "check the backend connection and try again.");
     }finally{
       statusEl.style.display = "none";
     }
@@ -651,14 +725,27 @@
     if(!name){ flashField("fName"); return; }
     if(!exp){ flashField("fExp"); return; }
 
-    inventory.push({
-      id: "m_" + Date.now() + "_" + Math.random().toString(36).slice(2,7),
-      name, batch: batch || null, mfg: mfg || null, exp,
-      addedAt: new Date().toISOString()
-    });
-    await saveInventory(inventory);
-    clearForm();
-    renderAll();
+    const sensitive = document.getElementById("fTempSensitive").checked;
+    const tempMin = document.getElementById("fTempMin").value;
+    const tempMax = document.getElementById("fTempMax").value;
+    if(sensitive && (tempMin === "" || tempMax === "" || Number(tempMin) >= Number(tempMax))){
+      document.getElementById("fTempMin").focus();
+      return;
+    }
+    const addButton = document.getElementById("addBtn");
+    addButton.disabled = true;
+    addButton.textContent = "Saving...";
+    try{
+      const created = await api("/api/medicines", {method:"POST", body:JSON.stringify({
+        name, batch:batch || null, mfg:mfg || null, exp,
+        temp_sensitive:sensitive, temp_min:sensitive ? Number(tempMin) : null,
+        temp_max:sensitive ? Number(tempMax) : null
+      })});
+      inventory.unshift(created);
+      clearForm();
+      renderAll();
+    }catch(error){ showError(error); }
+    finally{ addButton.disabled = false; addButton.textContent = "Add to inventory"; }
   });
 
   function flashField(id){
@@ -673,6 +760,10 @@
     document.getElementById("fBatch").value = "";
     document.getElementById("fMfg").value = "";
     document.getElementById("fExp").value = "";
+    document.getElementById("fTempSensitive").checked = false;
+    document.getElementById("fTempMin").value = "";
+    document.getElementById("fTempMax").value = "";
+    document.getElementById("tempControls").classList.remove("visible");
     document.getElementById("detectNote").style.display = "none";
     document.getElementById("rawText").style.display = "none";
     resetDropzone();
@@ -699,12 +790,16 @@
     if(isNaN(v) || v < 1) v = 90;
     thresholdDays = v;
     thresholdInput.value = v;
-    await saveSettings({thresholdDays});
-    renderAll();
+    try{ await saveSettings({thresholdDays}); renderAll(); }
+    catch(error){ showError(error); }
   });
 
   /* ================= Rendering ================= */
   function renderStats(){
+    if(loadState.inventory !== "loaded"){
+      ["statExpired","statNear","statValid","statTotal"].forEach(id => document.getElementById(id).textContent = "-");
+      return;
+    }
     let expired=0, near=0, valid=0;
     inventory.forEach(item => {
       const s = statusFor(item.exp);
@@ -719,12 +814,31 @@
   function renderAlerts(){
     const list = document.getElementById("alertList");
     const sub = document.getElementById("alertSub");
+    if(loadState.inventory === "loading"){
+      sub.textContent = "Loading inventory...";
+      list.innerHTML = '<div class="empty-note">Checking expiry dates and storage readings...</div>';
+      return;
+    }
+    if(loadState.inventory === "error"){
+      sub.textContent = "Alerts unavailable";
+      list.innerHTML = '<div class="empty-note">Inventory could not be loaded. Use Retry above to try again.</div>';
+      return;
+    }
     const flagged = inventory
       .map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}))
       .filter(x => x.s === "expired" || x.s === "near")
       .sort((a,b)=> a.d - b.d);
+    const latestByMedicine = new Map();
+    temperatureReadings.forEach(reading => {
+      if(!latestByMedicine.has(reading.medicine_id)) latestByMedicine.set(reading.medicine_id, reading);
+    });
+    const temperatureAlerts = inventory.filter(item => {
+      if(!item.temp_sensitive) return false;
+      const reading = latestByMedicine.get(item.id);
+      return reading && (Number(reading.temp_c) < Number(item.temp_min) || Number(reading.temp_c) > Number(item.temp_max));
+    }).map(item => ({item, reading:latestByMedicine.get(item.id)}));
 
-    if(!flagged.length){
+    if(!flagged.length && !temperatureAlerts.length){
       list.innerHTML = "";
       sub.textContent = inventory.length ? "Nothing needs attention right now" : "Nothing needs attention yet";
       const empty = document.createElement("div");
@@ -733,7 +847,8 @@
       list.appendChild(empty);
       return;
     }
-    sub.textContent = flagged.length + " item" + (flagged.length>1?"s":"") + " need" + (flagged.length>1?"":"s") + " attention";
+    const attentionCount = flagged.length + temperatureAlerts.length;
+    sub.textContent = attentionCount + " alert" + (attentionCount===1?"":"s") + " need attention";
     list.innerHTML = "";
     flagged.forEach(({item,s,d}) => {
       const row = document.createElement("div");
@@ -745,12 +860,28 @@
         '<div class="days">' + dayTxt + '</div>';
       list.appendChild(row);
     });
+    temperatureAlerts.forEach(({item,reading}) => {
+      const row = document.createElement("div");
+      row.className = "alert-row expired";
+      row.innerHTML = '<div class="dot"></div><div class="txt"><b>' + escapeHtml(item.name) + '</b> · temperature ' + Number(reading.temp_c).toFixed(1) + ' deg C is outside its ' + item.temp_min + '-' + item.temp_max + ' deg C range</div><div class="days">Check storage</div>';
+      list.appendChild(row);
+    });
   }
 
   function renderLedger(){
     const body = document.getElementById("ledgerBody");
     const empty = document.getElementById("emptyState");
     const sub = document.getElementById("ledgerSub");
+
+    if(loadState.inventory === "loading" || loadState.inventory === "error"){
+      body.innerHTML = "";
+      empty.style.display = "block";
+      empty.querySelector("p").textContent = loadState.inventory === "loading"
+        ? "Loading your inventory..."
+        : "Inventory could not be loaded. Use Retry above to try again.";
+      sub.textContent = loadState.inventory === "loading" ? "Loading..." : "Unavailable";
+      return;
+    }
 
     let items = inventory.map(item => ({item, s: statusFor(item.exp), d: daysUntil(item.exp)}));
     if(currentFilter !== "all") items = items.filter(x => x.s === currentFilter);
@@ -777,7 +908,7 @@
       const dayTxt = s==="expired" ? ("âˆ’" + Math.abs(d) + "d") : (s==="near" ? (d + "d") : (d + "d"));
       const dayColor = s==="expired" ? "var(--red)" : s==="near" ? "var(--amber)" : "var(--ink-soft)";
       row.innerHTML =
-        '<div class="lname">' + escapeHtml(item.name) + (item.batch ? '<span class="batch">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
+        '<div class="lname">' + escapeHtml(item.name) + (item.temp_sensitive ? '<span class="temp-badge">' + item.temp_min + '–' + item.temp_max + ' °C</span>' : '') + (item.batch ? '<span class="batch">'+escapeHtml(item.batch)+'</span>' : '') + '</div>' +
         '<div class="mono">' + (item.mfg || "â€”") + '</div>' +
         '<div class="mono">' + item.exp + '</div>' +
         '<div class="days-left" style="color:'+dayColor+';">' + dayTxt + '</div>' +
@@ -791,9 +922,12 @@
     body.querySelectorAll(".icon-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
-        inventory = inventory.filter(i => i.id !== id);
-        await saveInventory(inventory);
-        renderAll();
+        try{
+          await api("/api/medicines/" + encodeURIComponent(id), {method:"DELETE"});
+          inventory = inventory.filter(i => i.id !== id);
+          temperatureReadings = temperatureReadings.filter(reading => reading.medicine_id !== id);
+          renderAll();
+        }catch(error){ showError(error); }
       });
     });
   }
@@ -802,20 +936,110 @@
     return (str||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
 
+  function renderTemperature(){
+    const sensitive = inventory.filter(item => item.temp_sensitive);
+    const select = document.getElementById("temperatureMedicine");
+    const previous = select.value;
+    select.innerHTML = sensitive.length ? "" : '<option value="">Add a temperature-sensitive medicine first</option>';
+    sensitive.forEach(item => {
+      const option = document.createElement("option"); option.value = item.id;
+      option.textContent = item.name + " (" + item.temp_min + "–" + item.temp_max + " °C)";
+      select.appendChild(option);
+    });
+    if(sensitive.some(item => item.id === previous)) select.value = previous;
+    const box = document.getElementById("temperatureReadings");
+    box.innerHTML = "";
+    if(loadState.readings === "loading"){
+      box.innerHTML = '<div class="empty-note">Loading temperature readings...</div>';
+      return;
+    }
+    if(loadState.readings === "error"){
+      box.innerHTML = '<div class="empty-note">Temperature readings could not be loaded. Use Retry above to try again.</div>';
+      return;
+    }
+    if(!temperatureReadings.length){ box.innerHTML = '<div class="empty-note">No temperature readings logged yet.</div>'; return; }
+    temperatureReadings.forEach(reading => {
+      const outside = Number(reading.temp_c) < Number(reading.temp_min) || Number(reading.temp_c) > Number(reading.temp_max);
+      const row = document.createElement("div"); row.className = "temp-reading" + (outside ? " outside" : "");
+      const when = new Date(reading.recorded_at).toLocaleString();
+      row.innerHTML = '<span><b>' + escapeHtml(reading.medicine_name) + '</b> · ' + Number(reading.temp_c).toFixed(1) + ' °C' + (reading.note ? '<br><span class="mono">'+escapeHtml(reading.note)+'</span>' : '') + '</span><span class="mono">' + (outside ? 'OUT OF RANGE · ' : '') + escapeHtml(when) + '</span>';
+      box.appendChild(row);
+    });
+  }
+
   function renderAll(){
     renderStats();
+    renderTemperature();
     renderAlerts();
     renderLedger();
   }
 
-  /* ================= Init ================= */
-  (async function init(){
-    const settings = await loadSettings();
-    thresholdDays = settings.thresholdDays || 90;
-    thresholdInput.value = thresholdDays;
-    inventory = await loadInventory();
+  function showError(error){
+    const note = document.getElementById("detectNote");
+    note.style.display = "block";
+    note.textContent = "Could not complete that action: " + (error.message || "Check the connection and try again.");
+  }
+
+  function updateConnectionStatus(){
+    const failed = Object.entries(loadErrors);
+    if(!failed.length){ connectionStatus.hidden = true; return; }
+    connectionStatus.hidden = false;
+    connectionStatus.classList.add("error");
+    connectionMessage.textContent = failed.map(([section,error]) => `${section}: ${error.message}`).join(" | ");
+    retryBtn.hidden = false;
+  }
+
+  async function loadData(){
+    retryBtn.disabled = true;
+    retryBtn.textContent = "Retrying...";
+    connectionStatus.hidden = false;
+    connectionStatus.classList.remove("error");
+    connectionMessage.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:7px;"></span>Connecting to MedGuard...';
+    loadErrors = {};
+    const [settingsResult, inventoryResult, readingsResult] = await Promise.allSettled([loadSettings(), loadInventory(), loadTemperatureReadings()]);
+    if(settingsResult.status === "fulfilled"){
+      thresholdDays = settingsResult.value.thresholdDays || 90;
+      thresholdInput.value = thresholdDays;
+    }else loadErrors.Settings = settingsResult.reason;
+    if(inventoryResult.status === "fulfilled"){
+      inventory = inventoryResult.value; loadState.inventory = "loaded";
+    }else{ loadState.inventory = "error"; loadErrors.Inventory = inventoryResult.reason; }
+    if(readingsResult.status === "fulfilled"){
+      temperatureReadings = readingsResult.value; loadState.readings = "loaded";
+    }else{ loadState.readings = "error"; loadErrors.Temperature = readingsResult.reason; }
     renderAll();
-  })();
+    updateConnectionStatus();
+    retryBtn.disabled = false;
+    retryBtn.textContent = "Retry";
+  }
+  retryBtn.addEventListener("click", loadData);
+
+  document.getElementById("fTempSensitive").addEventListener("change", event => {
+    document.getElementById("tempControls").classList.toggle("visible", event.target.checked);
+  });
+  document.getElementById("logTemperatureBtn").addEventListener("click", async () => {
+    const medicineId = document.getElementById("temperatureMedicine").value;
+    const value = document.getElementById("temperatureValue").value;
+    if(!medicineId || value === "") return;
+    const logButton = document.getElementById("logTemperatureBtn");
+    logButton.disabled = true;
+    logButton.textContent = "Logging...";
+    try{
+      const reading = await api("/api/temperature-readings", {method:"POST", body:JSON.stringify({
+        medicine_id:medicineId, temp_c:Number(value), note:document.getElementById("temperatureNote").value.trim() || null
+      })});
+      temperatureReadings.unshift(reading);
+      temperatureReadings = temperatureReadings.slice(0,100);
+      document.getElementById("temperatureValue").value = "";
+      document.getElementById("temperatureNote").value = "";
+      renderAll();
+    }catch(error){ showError(error); }
+    finally{ logButton.disabled = false; logButton.textContent = "Log temperature"; }
+  });
+
+  /* ================= Init ================= */
+  renderAll();
+  loadData();
 
 })();
 </script>

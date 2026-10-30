@@ -1,5 +1,6 @@
 # Python virtual environment
 venv/
+.venv/
 
 # Python cache
 __pycache__/
@@ -8,6 +9,12 @@ __pycache__/
 
 # Environment variables
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.json
 
 # VS Code
 .vscode/
@@ -15,3 +22,11 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local databases and uploaded medicine or patient images
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+upload/
+*.patient-image.*

@@ -2,6 +2,22 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.json
 .vscode/
 node_modules/
 *.log
+
+# Local MedGuard inventory and temperature history
+*.db
+*.sqlite
+*.sqlite3
+
+# Local uploads and image captures
+uploads/
+upload/
+*.patient-image.*
